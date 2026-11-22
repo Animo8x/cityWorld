@@ -1,0 +1,836 @@
+import React, { useState } from 'react';
+import { MISSION_REGISTRY } from '../game/missions/missionSystem';
+import { PLAYER_SKINS, PLAYER_SKIN_LIST } from '../game/player/skinCatalog';
+import { VEHICLE_CATALOG } from '../game/vehicles/vehicleCatalog';
+import { INTERIOR_PORTALS } from '../game/world/worldLayout';
+import { HudSnapshot, Language, PlayerSkinId, QualityMode, VehicleClassId, WeaponId } from '../game/types';
+import {
+  CheckCircle2,
+  Play,
+  RotateCcw,
+  Code2,
+  Compass,
+  Settings,
+  Globe,
+  Backpack,
+  Car,
+  Sparkles,
+  Lock,
+  X,
+  Wifi,
+  Signal,
+  MapPin,
+  Wallet,
+  Power,
+  Navigation,
+  Home,
+} from 'lucide-react';
+import { getText } from '../i18n/translations';
+
+interface PauseModalProps {
+  hud: HudSnapshot;
+  onResume: () => void;
+  onStartMission: (id: string) => void;
+  onAbortMission: () => void;
+  onCycleWeather: () => void;
+  onAdvanceTime: () => void;
+  onSetQualityMode: (mode: QualityMode) => void;
+  onSetLanguage: (lang: Language) => void;
+}
+
+const QUALITY_MODES: QualityMode[] = ['very_low', 'low', 'medium', 'high', 'ultra'];
+
+export const PauseModal: React.FC<PauseModalProps> = ({
+  hud,
+  onResume,
+  onStartMission,
+  onAbortMission,
+  onCycleWeather,
+  onAdvanceTime,
+  onSetQualityMode,
+  onSetLanguage,
+}) => {
+  const [tab, setTab] = useState<'environment' | 'missions' | 'unity'>('environment');
+  const t = getText(hud.language);
+  const isRtl = hud.language === 'ar';
+
+  return (
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/90 flex items-center justify-center p-4">
+      <div className="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-950 border-b border-slate-800">
+          <div>
+            <h2 className="text-lg md:text-xl font-black tracking-wide text-white">{t.pauseTitle}</h2>
+            <p className="text-xs text-slate-400">
+              {isRtl ? hud.district.nameAr : hud.district.name} · {t.balance} ${hud.money.toLocaleString()} · {hud.completedMissionIds.length}/{MISSION_REGISTRY.length} {t.missionsDone}
+            </p>
+          </div>
+          <button
+            onClick={onResume}
+            className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm cursor-pointer shrink-0"
+          >
+            {t.resume}
+          </button>
+        </div>
+
+        <div className="flex gap-2 px-6 pt-3 border-b border-slate-800 bg-slate-900/80 overflow-x-auto">
+          <button
+            onClick={() => setTab('environment')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
+              tab === 'environment' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" /> {t.settingsTab}
+          </button>
+          <button
+            onClick={() => setTab('missions')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
+              tab === 'missions' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5" /> {t.missionsTab} ({MISSION_REGISTRY.length})
+          </button>
+          <button
+            onClick={() => setTab('unity')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
+              tab === 'unity' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <Code2 className="w-3.5 h-3.5" /> {t.unityTab}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {tab === 'missions' && (
+            <div className="flex flex-col gap-3">
+              {hud.activeMission && (
+                <div className="flex items-center justify-between p-3.5 rounded-lg bg-sky-950/60 border border-sky-600/60">
+                  <div>
+                    <div className="text-xs font-bold uppercase text-sky-400">{t.activeMission}</div>
+                    <div className="text-sm font-bold text-white">{hud.activeMission.title}</div>
+                    <div className="text-xs text-slate-300">{hud.activeMission.stepDescription}</div>
+                  </div>
+                  <button
+                    onClick={onAbortMission}
+                    className="px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white cursor-pointer"
+                  >
+                    {t.abort}
+                  </button>
+                </div>
+              )}
+
+              {MISSION_REGISTRY.map((m) => {
+                const completed = hud.completedMissionIds.includes(m.id);
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between gap-4 p-4 rounded-lg bg-slate-950/70 border border-slate-800"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-extrabold text-white">
+                          {isRtl ? m.titleAr : m.title}
+                        </span>
+                        <span className="text-xs font-bold text-emerald-400">+${m.rewardMoney}</span>
+                        {completed && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        {isRtl ? m.giverAr : m.giver}
+                      </div>
+                      <div className="text-xs text-slate-300 mt-1">
+                        {isRtl ? m.descriptionAr : m.description}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onStartMission(m.id)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shrink-0 cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5" /> {t.start}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {tab === 'environment' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-lg bg-slate-950/70 border border-slate-800 space-y-4">
+                {/* Language Switcher */}
+                <div>
+                  <h4 className="flex items-center gap-1.5 text-xs font-bold text-white mb-2">
+                    <Globe className="w-3.5 h-3.5 text-amber-400" /> {t.languageLabel}
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => onSetLanguage('ar')}
+                      className={`px-3 py-2 rounded text-xs font-extrabold cursor-pointer ${
+                        hud.language === 'ar'
+                          ? 'bg-amber-500 text-slate-950'
+                          : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                      }`}
+                    >
+                      العربية
+                    </button>
+                    <button
+                      onClick={() => onSetLanguage('en')}
+                      className={`px-3 py-2 rounded text-xs font-extrabold cursor-pointer ${
+                        hud.language === 'en'
+                          ? 'bg-amber-500 text-slate-950'
+                          : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                      }`}
+                    >
+                      English
+                    </button>
+                  </div>
+                </div>
+
+                {/* 5 Graphics Quality Modes */}
+                <div className="pt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold text-white">{t.graphicsQuality}</h4>
+                    <span className="text-[11px] font-bold text-emerald-400 tabular-nums">{hud.fps} FPS</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {QUALITY_MODES.map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => onSetQualityMode(mode)}
+                        className={`px-2.5 py-2 rounded text-xs font-bold cursor-pointer ${
+                          hud.qualityMode === mode
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        {t.qualityLabels[mode]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">
+                    {t.qualityHints[hud.qualityMode]}
+                  </p>
+                </div>
+
+                {/* Time & Weather */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <h3 className="text-xs font-bold text-white">{t.timeAndWeather}</h3>
+                  <div className="text-xs text-slate-300">
+                    <strong className="text-amber-400">
+                      {hud.timeLabel} ({t.timePhases[hud.timePhase]})
+                    </strong>{' '}
+                    · <strong className="text-sky-400">{t.weatherNames[hud.weather]}</strong>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={onAdvanceTime}
+                      className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white cursor-pointer"
+                    >
+                      {t.advanceTime}
+                    </button>
+                    <button
+                      onClick={onCycleWeather}
+                      className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white cursor-pointer"
+                    >
+                      {t.cycleWeather}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg bg-slate-950/70 border border-slate-800 space-y-2 text-xs text-slate-300">
+                <h3 className="text-sm font-bold text-white mb-2">{t.controlsTitle}</h3>
+                {hud.language === 'ar' ? (
+                  <>
+                    <div><strong className="text-amber-400">عصا التحكم / WASD:</strong> المشي والسباحة والقيادة</div>
+                    <div><strong className="text-amber-400">زر اليد / V:</strong> ضرب الأشخاص القريبين</div>
+                    <div><strong className="text-amber-400">زر الإطلاق / G:</strong> إطلاق النار بالمسدس، الشوزن، البندقية، أو RPG</div>
+                    <div><strong className="text-amber-400">تبديل السلاح / 1-6:</strong> يد، مسدس، رشاش، شوزن، بندقية، RPG</div>
+                    <div><strong className="text-amber-400">سرقة / ركوب / F:</strong> سرقة سيارة، دراجة نارية، أو بسكليت</div>
+                    <div><strong className="text-amber-400">تفاعل / E:</strong> دخول المتاجر والمعارض وبدء المهام</div>
+                    <div><strong className="text-emerald-400">الهاتف / P:</strong> استدعاء سياراتك المشتراة إلى مكان آمن</div>
+                    <div><strong className="text-amber-400">الحقيبة / B:</strong> تبديل وارتداء السكنات المملوكة</div>
+                    <div><strong className="text-amber-400">سحب الشاشة:</strong> تحريك الكاميرا 360 درجة</div>
+                  </>
+                ) : (
+                  <>
+                    <div><strong className="text-amber-400">WASD / Arrows:</strong> Walk, Swim, Drive, Steer</div>
+                    <div><strong className="text-amber-400">V / Punch Button:</strong> Punch Nearby Pedestrian</div>
+                    <div><strong className="text-amber-400">Click / G:</strong> Fire Weapon (Pistol, SMG, Shotgun, Rifle, RPG)</div>
+                    <div><strong className="text-amber-400">1–6 / Tab:</strong> Switch Weapon (Fists, Pistol, SMG, Shotgun, Rifle, RPG)</div>
+                    <div><strong className="text-amber-400">F:</strong> Steal Traffic/Police Car, Bike, or Enter/Exit</div>
+                    <div><strong className="text-amber-400">E:</strong> Enter Shop / Showroom / Start Mission</div>
+                    <div><strong className="text-emerald-400">P / Green Phone:</strong> Summon Owned Vehicles Safely</div>
+                    <div><strong className="text-amber-400">B / Backpack:</strong> Equip & Swap Owned Skins</div>
+                    <div><strong className="text-amber-400">L / Q / H:</strong> Headlights / Left Signal / Horn & Bike Bell</div>
+                    <div><strong className="text-amber-400">Mouse Drag & Wheel:</strong> 360° Orbit & Zoom</div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {tab === 'unity' && (
+            <div className="space-y-3 text-xs text-slate-300" dir="ltr">
+              <p className="text-slate-200 leading-relaxed">
+                Alongside the playable 3D WebGL build, a complete modular <strong>Unity Engine + C#</strong> script architecture has been generated in <code className="text-amber-400">/unity/CityWorld/Assets/Scripts/</code>:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 font-mono text-[11px]">
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Core/Interfaces.cs · CurrencyManager.cs · ObjectPool.cs</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Player/PlayerController.cs · ThirdPersonCamera.cs</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Vehicles/VehicleDataSO.cs · VehicleController.cs</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">AI/TrafficSystem.cs (Waypoints, Lights, Pooling)</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">NPC/PedestrianAI.cs (NavMesh Roaming & Flee)</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Police/WantedSystem.cs (0–5 Stars & PoliceAI)</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Missions/MissionManager.cs (MissionDataSO)</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">World/WorldStreamingManager.cs · InteriorPortal.cs</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Environment/DayNightWeather.cs</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Audio/AudioManager.cs · UI/CityWorldHUD.cs</div>
+              </div>
+              <p className="text-slate-400">
+                See <code className="text-sky-400">/unity/CityWorld/README_UNITY_SETUP.md</code> for URP lighting, NavMesh baking, WheelCollider prefabs, and Additive Scene Streaming setup.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface InteriorShopModalProps {
+  hud: HudSnapshot;
+  onAction: (actionId: string) => void;
+  onClose: () => void;
+}
+
+export const InteriorShopModal: React.FC<InteriorShopModalProps> = ({ hud, onAction, onClose }) => {
+  if (!hud.activeInterior) return null;
+  const interior = hud.activeInterior;
+  const t = getText(hud.language);
+  const isRtl = hud.language === 'ar';
+
+  return (
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/85 flex items-center justify-center p-4">
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-extrabold text-white">
+              {isRtl ? interior.nameAr : interior.name}
+            </h2>
+            <p className="text-xs text-slate-400">
+              {isRtl ? interior.subtitleAr : interior.subtitle}
+            </p>
+          </div>
+          <div className="text-sm font-black text-emerald-400 tabular-nums">${hud.money.toLocaleString()}</div>
+        </div>
+        <div className="p-5 flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
+          {interior.shopActions.map((act) => {
+            let statusBadge: string | null = null;
+            let isEquipped = false;
+            if (act.id.startsWith('buy_skin_')) {
+              const skinId = act.id.replace('buy_skin_', '') as PlayerSkinId;
+              if (hud.activeSkin === skinId) {
+                statusBadge = t.equipped;
+                isEquipped = true;
+              } else if (hud.ownedSkins.includes(skinId)) {
+                statusBadge = t.owned;
+              }
+            } else if (act.id.startsWith('buy_weapon_') && act.id !== 'buy_weapon_ammo_crate') {
+              const wId = act.id.replace('buy_weapon_', '') as WeaponId;
+              if (hud.ownedWeapons.includes(wId)) {
+                statusBadge = t.owned;
+              }
+            } else if (act.id.startsWith('buy_car_')) {
+              const cId = act.id.replace('buy_car_', '') as VehicleClassId;
+              if (hud.ownedVehicles.includes(cId)) {
+                statusBadge = t.owned;
+              }
+            } else if (act.id === 'buy_house' && hud.ownedHouses.includes(interior.id)) {
+              statusBadge = t.owned;
+              isEquipped = true;
+            }
+
+            return (
+              <button
+                key={act.id}
+                onClick={() => onAction(act.id)}
+                className="flex items-center justify-between p-3.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-start cursor-pointer"
+              >
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold text-white">
+                      {isRtl ? act.labelAr : act.label}
+                    </span>
+                    {statusBadge && (
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                          isEquipped
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                        }`}
+                      >
+                        {statusBadge}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {isRtl ? act.descriptionAr : act.description}
+                  </div>
+                </div>
+                <span className="text-xs font-black text-amber-400 tabular-nums shrink-0 ms-3">
+                  {((act.id.startsWith('buy_skin_') || act.id === 'buy_house') && statusBadge) || act.cost === 0
+                    ? t.free
+                    : `$${act.cost.toLocaleString()}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="px-5 py-3 bg-slate-950 border-t border-slate-800 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white cursor-pointer"
+          >
+            {t.backToInterior}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface WastedModalProps {
+  language: Language;
+  onRespawn: () => void;
+}
+
+export const WastedModal: React.FC<WastedModalProps> = ({ language, onRespawn }) => {
+  const t = getText(language);
+  return (
+    <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-rose-950/85 flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-slate-950 border border-rose-500/60 rounded-xl p-8 text-center shadow-2xl">
+        <h2 className="text-3xl md:text-4xl font-black tracking-widest text-rose-500 uppercase">{t.wastedTitle}</h2>
+        <p className="text-sm text-slate-300 mt-2">{t.wastedDesc}</p>
+        <button
+          onClick={onRespawn}
+          className="mt-6 inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm uppercase cursor-pointer"
+        >
+          <RotateCcw className="w-4 h-4" /> {t.respawnHospital}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+interface PhoneModalProps {
+  hud: HudSnapshot;
+  onSummonVehicle: (classId: VehicleClassId) => void;
+  onSetGpsTarget: (pt: { x: number; z: number }) => void;
+  onClose: () => void;
+}
+
+export const PhoneModal: React.FC<PhoneModalProps> = ({
+  hud,
+  onSummonVehicle,
+  onSetGpsTarget,
+  onClose,
+}) => {
+  const [appTab, setAppTab] = useState<'cars' | 'maps' | 'bank'>('cars');
+  const t = getText(hud.language);
+  const isRtl = hud.language === 'ar';
+
+  const quickDestinations = INTERIOR_PORTALS.filter(
+    (p) =>
+      p.kind === 'garage' ||
+      p.kind === 'dealership' ||
+      p.kind === 'house' ||
+      p.kind === 'gunshop' ||
+      p.kind === 'skins' ||
+      p.id === 'market_downtown'
+  );
+
+  // Pick nearest car dealership (Apex Auto or Premier Motors)
+  const apexPortal = INTERIOR_PORTALS.find((p) => p.id === 'auto_garage')!;
+  const premierPortal = INTERIOR_PORTALS.find((p) => p.id === 'premier_motors')!;
+  const dApex = Math.hypot(hud.playerPos.x - apexPortal.exteriorPos.x, hud.playerPos.z - apexPortal.exteriorPos.z);
+  const dPremier = Math.hypot(
+    hud.playerPos.x - premierPortal.exteriorPos.x,
+    hud.playerPos.z - premierPortal.exteriorPos.z
+  );
+  const nearestDealer = dApex <= dPremier ? apexPortal : premierPortal;
+
+  const routeToPortal = (x: number, z: number) => {
+    onSetGpsTarget({ x, z });
+    onClose();
+  };
+
+  const activeSkinDef = PLAYER_SKINS[hud.activeSkin];
+
+  return (
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/82 flex items-center justify-center p-4">
+      {/* Smartphone Hardware Outer Shell + Physical Side Buttons */}
+      <div className="relative w-full max-w-[332px]">
+        {/* Physical Volume Buttons (Left side) */}
+        <div className="absolute -left-[4px] top-24 w-[4px] h-9 rounded-l bg-slate-500 border-l border-slate-300/60" />
+        <div className="absolute -left-[4px] top-36 w-[4px] h-12 rounded-l bg-slate-500 border-l border-slate-300/60" />
+        <div className="absolute -left-[4px] top-52 w-[4px] h-12 rounded-l bg-slate-500 border-l border-slate-300/60" />
+        {/* Physical Power Button (Right side) */}
+        <button
+          onClick={onClose}
+          title="Close Phone (P)"
+          className="absolute -right-[5px] top-32 w-[5px] h-16 rounded-r bg-slate-400 hover:bg-rose-400 cursor-pointer border-r border-slate-200/70"
+        />
+
+        {/* Brushed Titanium Metallic Chassis */}
+        <div className="rounded-[2.8rem] p-[5px] bg-gradient-to-b from-slate-400 via-slate-600 to-slate-500 shadow-[0_28px_70px_rgba(0,0,0,0.88)]">
+          {/* Glossy Black OLED Glass Bezel */}
+          <div className="rounded-[2.5rem] p-[8px] bg-black">
+            {/* Actual AMOLED Display Screen */}
+            <div className="rounded-[2.05rem] overflow-hidden flex flex-col h-[540px] max-h-[82vh] bg-gradient-to-b from-[#0b132b] via-[#0f1d38] to-[#070d1c] border border-white/10">
+              {/* Realistic Top Status Bar + Dynamic Island */}
+              <div dir="ltr" className="px-5 pt-2.5 pb-2 flex items-center justify-between text-[11px] font-bold text-white shrink-0">
+                <span className="tabular-nums tracking-tight w-12">{hud.timeLabel}</span>
+
+                {/* Dynamic Island Notch (Speaker + Camera Lens) */}
+                <div className="w-24 h-6 rounded-full bg-black border border-slate-800 flex items-center justify-between px-2.5 shadow-inner">
+                  <span className="w-8 h-1 rounded-full bg-slate-800" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#0c1a38] border border-sky-500/40" />
+                </div>
+
+                {/* 5G Signal + WiFi + 94% Green Battery */}
+                <div className="flex items-center gap-1.5 w-16 justify-end">
+                  <Signal className="w-3 h-3 text-white" />
+                  <Wifi className="w-3 h-3 text-white" />
+                  <div className="flex items-center gap-0.5 border border-white/70 rounded-[3px] px-[2px] py-[1px]">
+                    <div className="w-3.5 h-1.5 bg-emerald-400 rounded-[1px]" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Active Smartphone App Screen Header */}
+              <div className="px-4 pt-1 pb-2.5 border-b border-white/10 flex items-center justify-between shrink-0">
+                <div>
+                  <h2 className="text-sm font-black text-white">
+                    {appTab === 'cars'
+                      ? t.phoneTitle
+                      : appTab === 'maps'
+                        ? t.phoneMapsTitle
+                        : t.phoneBankTitle}
+                  </h2>
+                  <p className="text-[10px] text-slate-300/80">
+                    {appTab === 'cars'
+                      ? t.phoneSub
+                      : appTab === 'maps'
+                        ? t.phoneMapsSub
+                        : isRtl
+                          ? hud.district.nameAr
+                          : hud.district.name}
+                  </p>
+                </div>
+                <div className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black tabular-nums">
+                  ${hud.money.toLocaleString()}
+                </div>
+              </div>
+
+              {/* Main Scrollable App Content */}
+              <div className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5">
+                {appTab === 'cars' && (
+                  <>
+                    {hud.ownedVehicles.length === 0 ? (
+                      <div className="my-auto flex flex-col items-center text-center px-4 py-5 rounded-2xl bg-slate-900/85 border border-white/10 shadow-lg">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-emerald-400 mb-3">
+                          <Car className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-black text-white">{t.phoneEmptyTitle}</div>
+                        <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">{t.phoneEmptyDesc}</p>
+                        <button
+                          onClick={() => routeToPortal(nearestDealer.exteriorPos.x, nearestDealer.exteriorPos.z)}
+                          className="mt-4 w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-black cursor-pointer shadow"
+                        >
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>{t.goToDealership}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      hud.ownedVehicles.map((classId) => {
+                        const spec = VEHICLE_CATALOG[classId];
+                        const maxKmh = Math.round(spec.maxSpeed * 3.6);
+                        return (
+                          <div
+                            key={classId}
+                            className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-white/10 hover:border-emerald-400/60"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
+                                <Car className="w-5 h-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-black text-white truncate">
+                                  {isRtl ? spec.nameAr : spec.name}{' '}
+                                  <span className="text-amber-400">({maxKmh} {isRtl ? 'كم/س' : 'km/h'})</span>
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {spec.category} · {maxKmh} KM/H
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => onSummonVehicle(classId)}
+                              className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-[11px] font-black shrink-0 cursor-pointer"
+                            >
+                              {t.summonCar}
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
+                )}
+
+                {appTab === 'maps' &&
+                  quickDestinations.map((p) => {
+                    const dist = Math.round(
+                      Math.hypot(hud.playerPos.x - p.exteriorPos.x, hud.playerPos.z - p.exteriorPos.z)
+                    );
+                    const isDealer = p.kind === 'dealership' || p.kind === 'garage';
+                    const isHouse = p.kind === 'house';
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => routeToPortal(p.exteriorPos.x, p.exteriorPos.z)}
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-start cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              isDealer
+                                ? 'bg-sky-500/20 text-sky-400 border border-sky-400/40'
+                                : isHouse
+                                  ? 'bg-orange-500/20 text-orange-400 border border-orange-400/40'
+                                  : p.kind === 'gunshop'
+                                    ? 'bg-rose-500/20 text-rose-400 border border-rose-400/40'
+                                    : p.kind === 'skins'
+                                      ? 'bg-amber-500/20 text-amber-400 border border-amber-400/40'
+                                      : 'bg-emerald-500/20 text-emerald-400 border border-emerald-400/40'
+                            }`}
+                          >
+                            {isDealer ? (
+                              <Car className="w-4 h-4" />
+                            ) : isHouse ? (
+                              <Home className="w-4 h-4" />
+                            ) : (
+                              <MapPin className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-extrabold text-white truncate">
+                              {isRtl ? p.nameAr : p.name}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {isRtl ? p.subtitleAr : p.subtitle}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="px-2 py-1 rounded-lg bg-sky-500 text-slate-950 text-[10px] font-black shrink-0 tabular-nums">
+                          {dist}m
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                {appTab === 'bank' && (
+                  <div className="flex flex-col gap-2.5">
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-900 border border-emerald-300/30 shadow-lg">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-100/80">
+                        {t.balance}
+                      </div>
+                      <div className="text-2xl font-black text-white tabular-nums mt-0.5">
+                        ${hud.money.toLocaleString()}
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-white/15 flex items-center justify-between text-[11px] text-emerald-50">
+                        <span>{isRtl ? activeSkinDef.nameAr : activeSkinDef.name}</span>
+                        <span>{hud.completedMissionIds.length} {t.missionsDone}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-2.5 rounded-2xl bg-slate-900/90 border border-white/10">
+                        <div className="text-[10px] text-slate-400">{t.phoneAppCars}</div>
+                        <div className="text-lg font-black text-white tabular-nums">{hud.ownedVehicles.length}</div>
+                      </div>
+                      <div className="p-2.5 rounded-2xl bg-slate-900/90 border border-white/10">
+                        <div className="text-[10px] text-slate-400">{t.housesLabel}</div>
+                        <div className="text-lg font-black text-orange-400 tabular-nums">{hud.ownedHouses.length}</div>
+                      </div>
+                      <div className="p-2.5 rounded-2xl bg-slate-900/90 border border-white/10">
+                        <div className="text-[10px] text-slate-400">{t.backpack}</div>
+                        <div className="text-lg font-black text-amber-400 tabular-nums">{hud.ownedSkins.length}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Realistic Smartphone Glass Dock (App Launcher Icons) + Home Gesture Bar */}
+              <div className="px-3 pt-2 pb-2 bg-slate-950/90 border-t border-white/10 flex flex-col items-center gap-2 shrink-0">
+                <div className="w-full grid grid-cols-4 gap-2">
+                  <button
+                    onClick={() => setAppTab('cars')}
+                    className={`flex flex-col items-center gap-1 py-1.5 rounded-xl cursor-pointer ${
+                      appTab === 'cars' ? 'bg-white/10' : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 shadow">
+                      <Car className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-200">{t.phoneAppCars}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setAppTab('maps')}
+                    className={`flex flex-col items-center gap-1 py-1.5 rounded-xl cursor-pointer ${
+                      appTab === 'maps' ? 'bg-white/10' : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-sky-500 flex items-center justify-center text-slate-950 shadow">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-200">{t.phoneAppMaps}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setAppTab('bank')}
+                    className={`flex flex-col items-center gap-1 py-1.5 rounded-xl cursor-pointer ${
+                      appTab === 'bank' ? 'bg-white/10' : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 shadow">
+                      <Wallet className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-200">{t.phoneAppBank}</span>
+                  </button>
+
+                  <button
+                    onClick={onClose}
+                    className="flex flex-col items-center gap-1 py-1.5 rounded-xl hover:bg-rose-500/15 cursor-pointer"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-rose-600 flex items-center justify-center text-white shadow">
+                      <Power className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-200">{t.exitCar}</span>
+                  </button>
+                </div>
+
+                {/* White Swipe Home Gesture Pill */}
+                <button
+                  onClick={onClose}
+                  aria-label="Close Phone"
+                  className="w-24 h-1 rounded-full bg-white/75 hover:bg-white cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface BackpackModalProps {
+  hud: HudSnapshot;
+  onEquipSkin: (skinId: PlayerSkinId) => void;
+  onClose: () => void;
+}
+
+export const BackpackModal: React.FC<BackpackModalProps> = ({ hud, onEquipSkin, onClose }) => {
+  const t = getText(hud.language);
+  const isRtl = hud.language === 'ar';
+
+  return (
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/85 flex items-center justify-center p-4">
+      <div className="w-full max-w-xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[86vh]">
+        <div className="px-5 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950">
+              <Backpack className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-white">{t.backpackTitle}</h2>
+              <p className="text-xs text-slate-400">{t.backpackSub}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-black text-emerald-400 tabular-nums">${hud.money.toLocaleString()}</span>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-200 cursor-pointer"
+              title="Close Backpack (B)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {PLAYER_SKIN_LIST.map((skin) => {
+            const isOwned = hud.ownedSkins.includes(skin.id);
+            const isEquipped = hud.activeSkin === skin.id;
+            const isGold = skin.id === 'pure_gold';
+
+            return (
+              <div
+                key={skin.id}
+                className={`p-3.5 rounded-xl border flex flex-col justify-between gap-3 ${
+                  isEquipped
+                    ? 'bg-amber-950/35 border-amber-400'
+                    : isOwned
+                      ? 'bg-slate-950 border-slate-700'
+                      : 'bg-slate-950/60 border-slate-800/80 opacity-80'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className="w-11 h-11 rounded-lg border border-white/25 shrink-0 flex items-center justify-center shadow-inner"
+                    style={{ backgroundColor: skin.swatchHex }}
+                  >
+                    {isGold && <Sparkles className="w-5 h-5 text-slate-950" />}
+                    {!isOwned && !isGold && <Lock className="w-4 h-4 text-white/80" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-extrabold text-white leading-snug">
+                      {isRtl ? skin.nameAr : skin.name}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                      {isRtl ? skin.descriptionAr : skin.description}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                  <span className="text-xs font-black tabular-nums text-amber-400">
+                    {skin.price === 0 ? t.free : `$${skin.price.toLocaleString()}`}
+                  </span>
+                  {isEquipped ? (
+                    <span className="px-3 py-1 rounded-md bg-emerald-500 text-slate-950 text-xs font-black">
+                      {t.equipped}
+                    </span>
+                  ) : isOwned ? (
+                    <button
+                      onClick={() => onEquipSkin(skin.id)}
+                      className="px-3.5 py-1 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer"
+                    >
+                      {t.equipSkin}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      {t.lockedSkinHint}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};

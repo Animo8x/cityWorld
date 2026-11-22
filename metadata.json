@@ -1,0 +1,6 @@
+{
+  "name": "CityWorld",
+  "description": "An expansive 3D open-world city sandbox with 10 distinct districts, vehicle physics, dynamic traffic, pedestrian AI, police chases, missions, weather, and a day/night cycle.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
