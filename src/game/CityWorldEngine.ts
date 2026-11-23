@@ -178,7 +178,12 @@ export class CityWorldEngine {
     );
 
     this.qualityMode = this.isMobile ? 'medium' : 'high';
-    const savedLang = typeof window !== 'undefined' ? window.localStorage.getItem('cityworld_lang') : null;
+    let savedLang: string | null = null;
+    try {
+      savedLang = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem('cityworld_lang') : null;
+    } catch {
+      savedLang = null;
+    }
     if (savedLang === 'ar' || savedLang === 'en') {
       this.language = savedLang;
     }
