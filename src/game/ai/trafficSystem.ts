@@ -350,15 +350,24 @@ export class TrafficSystem {
       a.rig.root.position.set(a.x, a.y, a.z);
       a.rig.root.rotation.y = a.heading;
       const spin = (a.speed * dt) / a.rig.spec.wheelRadius;
-      a.rig.wheelSpinMeshes.forEach((w) => {
-        w.rotation.x += spin;
-      });
-      a.rig.headlightMeshes.forEach((h) => {
-        (h.material as THREE.MeshStandardMaterial).emissiveIntensity = isNight ? 2.2 : 0.15;
-      });
-      a.rig.taillightMeshes.forEach((t) => {
-        (t.material as THREE.MeshStandardMaterial).emissiveIntensity = a.braking ? 2.6 : isNight ? 0.9 : 0.2;
-      });
+      const spins = a.rig.wheelSpinMeshes;
+      for (let k = 0; k < spins.length; k++) {
+        spins[k].rotation.x += spin;
+      }
+      const headLevel = isNight ? 2.2 : 0.15;
+      const heads = a.rig.headlightMeshes;
+      if (heads.length > 0 && (heads[0].material as THREE.MeshStandardMaterial).emissiveIntensity !== headLevel) {
+        for (let k = 0; k < heads.length; k++) {
+          (heads[k].material as THREE.MeshStandardMaterial).emissiveIntensity = headLevel;
+        }
+      }
+      const tailLevel = a.braking ? 2.6 : isNight ? 0.9 : 0.2;
+      const tails = a.rig.taillightMeshes;
+      if (tails.length > 0 && (tails[0].material as THREE.MeshStandardMaterial).emissiveIntensity !== tailLevel) {
+        for (let k = 0; k < tails.length; k++) {
+          (tails[k].material as THREE.MeshStandardMaterial).emissiveIntensity = tailLevel;
+        }
+      }
     }
   }
 

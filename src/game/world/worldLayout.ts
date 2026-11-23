@@ -1,6 +1,8 @@
 import { ColliderBox, DistrictInfo, InteriorPortalDef } from '../types';
 
 export const WORLD_HALF_SIZE = 600;
+export const MAINLAND_BORDER = 532;
+export const ISLAND_CENTER = { x: -180, z: 760 };
 export const WATER_LEVEL = -0.35;
 
 export const DISTRICTS: DistrictInfo[] = [
@@ -103,6 +105,16 @@ export const DISTRICTS: DistrictInfo[] = [
     bounds: { minX: -390, maxX: 390, minZ: -290, maxZ: 305 },
     center: { x: 0, z: -265 },
     mapColor: '#1e293b',
+  },
+  {
+    id: 'island',
+    name: 'Palm Cove Island',
+    nameAr: 'الجزيرة الاستوائية',
+    subtitle: 'Tropical Island Airstrip & Beach',
+    subtitleAr: 'جزيرة رملية هادئة ومدرج طائرات',
+    bounds: { minX: -290, maxX: -70, minZ: 650, maxZ: 870 },
+    center: { x: -180, z: 760 },
+    mapColor: '#c2a66e',
   },
 ];
 
@@ -580,6 +592,14 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
         description: 'Fastest 342 km/h supersonic hypercar in CityWorld!',
         descriptionAr: 'أقوى وأسرع سيارة في اللعبة بسرعة 342 كم/س!',
       },
+      {
+        id: 'buy_car_airplane',
+        label: 'Tier 12 · SkyHopper Prop Plane (302 km/h)',
+        labelAr: 'فئة 12 · طائرة سيتي وورلد للطيران إلى الجزيرة (302 كم/س)',
+        cost: 12000,
+        description: 'Fly across the ocean to Palm Cove Island! Also parked at Airport.',
+        descriptionAr: 'تسمح لك بالطيران عبر البحر إلى الجزيرة (تتوفر أيضاً في المطار مجاناً).',
+      },
     ],
   },
   // 4 Purchasable Live-In Houses (Priced > $5,000 progressively by size, with Food & Bed inside)
@@ -752,6 +772,25 @@ export function getBridgeDeckHeight(x: number, z: number): number | null {
 }
 
 export function groundHeightAt(x: number, z: number): number {
+  // Tropical Island out in the southern ocean (reachable by Airplane)
+  const islDx = (x - ISLAND_CENTER.x) / 1.05;
+  const islDz = (z - ISLAND_CENTER.z) / 1.15;
+  const rIsl = Math.hypot(islDx, islDz);
+  if (rIsl < 112) {
+    // Flat landing airstrip strip along the center of the Island
+    if (Math.abs(x - ISLAND_CENTER.x) <= 24 && z >= 682 && z <= 828) {
+      return 0.85;
+    }
+    const coastBlend = Math.max(0, 1 - rIsl / 106);
+    const dome = Math.pow(coastBlend, 0.72) * 3.8;
+    const hillExtra =
+      rIsl < 72
+        ? Math.max(0, Math.sin(x * 0.04) * Math.cos(z * 0.04) * 1.6 + (x < -210 ? 1.8 : 0))
+        : 0;
+    const islHeight = -3.4 + dome * 1.45 + hillExtra;
+    if (islHeight > -3.2) return islHeight;
+  }
+
   if (x >= 140 && x <= 390 && z >= 140 && z <= 355) {
     return 0.4;
   }
@@ -806,6 +845,10 @@ export function groundHeightAt(x: number, z: number): number {
 }
 
 export function getDistrictAt(x: number, z: number): DistrictInfo {
+  if (z > 620 && Math.hypot(x - ISLAND_CENTER.x, z - ISLAND_CENTER.z) < 135) {
+    return DISTRICTS.find((d) => d.id === 'island')!;
+  }
+
   if (
     Math.abs(z - -265) < 11 ||
     Math.abs(z - 290) < 10 ||
@@ -816,7 +859,7 @@ export function getDistrictAt(x: number, z: number): DistrictInfo {
   }
 
   for (const d of DISTRICTS) {
-    if (d.id === 'highway') continue;
+    if (d.id === 'highway' || d.id === 'island') continue;
     if (x >= d.bounds.minX && x <= d.bounds.maxX && z >= d.bounds.minZ && z <= d.bounds.maxZ) {
       return d;
     }
@@ -824,6 +867,46 @@ export function getDistrictAt(x: number, z: number): DistrictInfo {
 
   if (z > 300) return DISTRICTS.find((d) => d.id === 'beach')!;
   return DISTRICTS.find((d) => d.id === 'countryside')!;
+}
+
+const COLLIDER_GRID_CELL = 44;
+interface ColliderGrid {
+  cells: Map<number, ColliderBox[]>;
+  seenStamp: WeakMap<ColliderBox, number>;
+  stamp: number;
+}
+const colliderGridCache = new WeakMap<ColliderBox[], ColliderGrid>();
+
+function cellHash(cx: number, cz: number): number {
+  return ((cx + 512) << 12) | (cz + 512);
+}
+
+function getColliderGrid(colliders: ColliderBox[]): ColliderGrid {
+  let grid = colliderGridCache.get(colliders);
+  if (grid) return grid;
+
+  const cells = new Map<number, ColliderBox[]>();
+  for (let i = 0; i < colliders.length; i++) {
+    const c = colliders[i];
+    const minCx = Math.floor(c.minX / COLLIDER_GRID_CELL);
+    const maxCx = Math.floor(c.maxX / COLLIDER_GRID_CELL);
+    const minCz = Math.floor(c.minZ / COLLIDER_GRID_CELL);
+    const maxCz = Math.floor(c.maxZ / COLLIDER_GRID_CELL);
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cz = minCz; cz <= maxCz; cz++) {
+        const key = cellHash(cx, cz);
+        let bucket = cells.get(key);
+        if (!bucket) {
+          bucket = [];
+          cells.set(key, bucket);
+        }
+        bucket.push(c);
+      }
+    }
+  }
+  grid = { cells, seenStamp: new WeakMap<ColliderBox, number>(), stamp: 1 };
+  colliderGridCache.set(colliders, grid);
+  return grid;
 }
 
 export function resolveCircleColliders(
@@ -836,35 +919,54 @@ export function resolveCircleColliders(
   let outX = x;
   let outZ = z;
   let hit = false;
+  const radiusSq = radius * radius;
 
-  for (let i = 0; i < colliders.length; i++) {
-    const c = colliders[i];
-    if (y > c.maxY) continue;
-    if (c.minY !== undefined && y + 1.8 < c.minY) continue;
+  const grid = getColliderGrid(colliders);
+  grid.stamp++;
+  const stamp = grid.stamp;
 
-    const closestX = Math.max(c.minX, Math.min(outX, c.maxX));
-    const closestZ = Math.max(c.minZ, Math.min(outZ, c.maxZ));
-    const dx = outX - closestX;
-    const dz = outZ - closestZ;
-    const distSq = dx * dx + dz * dz;
+  const minCx = Math.floor((x - radius - 2) / COLLIDER_GRID_CELL);
+  const maxCx = Math.floor((x + radius + 2) / COLLIDER_GRID_CELL);
+  const minCz = Math.floor((z - radius - 2) / COLLIDER_GRID_CELL);
+  const maxCz = Math.floor((z + radius + 2) / COLLIDER_GRID_CELL);
 
-    if (distSq < radius * radius) {
-      hit = true;
-      const dist = Math.sqrt(distSq);
-      if (dist > 0.0001) {
-        const push = radius - dist;
-        outX += (dx / dist) * push;
-        outZ += (dz / dist) * push;
-      } else {
-        const left = Math.abs(outX - c.minX);
-        const right = Math.abs(c.maxX - outX);
-        const top = Math.abs(outZ - c.minZ);
-        const bottom = Math.abs(c.maxZ - outZ);
-        const m = Math.min(left, right, top, bottom);
-        if (m === left) outX = c.minX - radius;
-        else if (m === right) outX = c.maxX + radius;
-        else if (m === top) outZ = c.minZ - radius;
-        else outZ = c.maxZ + radius;
+  for (let cx = minCx; cx <= maxCx; cx++) {
+    for (let cz = minCz; cz <= maxCz; cz++) {
+      const bucket = grid.cells.get(cellHash(cx, cz));
+      if (!bucket) continue;
+      for (let i = 0; i < bucket.length; i++) {
+        const c = bucket[i];
+        if (grid.seenStamp.get(c) === stamp) continue;
+        grid.seenStamp.set(c, stamp);
+
+        if (y > c.maxY) continue;
+        if (c.minY !== undefined && y + 1.8 < c.minY) continue;
+
+        const closestX = outX < c.minX ? c.minX : outX > c.maxX ? c.maxX : outX;
+        const closestZ = outZ < c.minZ ? c.minZ : outZ > c.maxZ ? c.maxZ : outZ;
+        const dx = outX - closestX;
+        const dz = outZ - closestZ;
+        const distSq = dx * dx + dz * dz;
+
+        if (distSq < radiusSq) {
+          hit = true;
+          const dist = Math.sqrt(distSq);
+          if (dist > 0.0001) {
+            const push = radius - dist;
+            outX += (dx / dist) * push;
+            outZ += (dz / dist) * push;
+          } else {
+            const left = Math.abs(outX - c.minX);
+            const right = Math.abs(c.maxX - outX);
+            const top = Math.abs(outZ - c.minZ);
+            const bottom = Math.abs(c.maxZ - outZ);
+            const m = Math.min(left, right, top, bottom);
+            if (m === left) outX = c.minX - radius;
+            else if (m === right) outX = c.maxX + radius;
+            else if (m === top) outZ = c.minZ - radius;
+            else outZ = c.maxZ + radius;
+          }
+        }
       }
     }
   }

@@ -22,11 +22,13 @@ export interface VirtualInputState {
   throttle: number; // -1..1
   steer: number; // -1 (right) .. 1 (left) matching KeyA=+1, KeyD=-1
   handbrake: boolean;
+  climb: number;
 }
 
 interface MobileControlsProps {
   language: Language;
   inVehicle: boolean;
+  isAirplane?: boolean;
   isSwimming: boolean;
   nearPedestrian: boolean;
   hasInteractionPrompt: boolean;
@@ -46,6 +48,7 @@ interface MobileControlsProps {
 export const MobileControls: React.FC<MobileControlsProps> = ({
   language,
   inVehicle,
+  isAirplane = false,
   isSwimming,
   nearPedestrian,
   hasInteractionPrompt,
@@ -70,6 +73,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     throttle: 0,
     steer: 0,
     handbrake: false,
+    climb: 0,
   });
 
   const [knob, setKnob] = useState({ x: 0, y: 0 });
@@ -123,11 +127,11 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-20 pointer-events-none flex items-end justify-between px-4 pb-5 pt-2 select-none"
+      className="fixed inset-x-0 bottom-0 z-20 pointer-events-none flex items-end justify-between gap-2 px-2.5 pb-2.5 sm:px-4 sm:pb-5 pt-1 select-none"
       style={{ touchAction: 'none' }}
     >
       {/* LEFT CONTROL CLUSTER */}
-      <div className="pointer-events-auto" style={{ touchAction: 'none' }}>
+      <div className="pointer-events-auto shrink-0" style={{ touchAction: 'none' }}>
         {!inVehicle ? (
           /* On-foot / Swim Virtual Analog Joystick */
           <div
@@ -149,12 +153,12 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               resetJoystick();
             }}
             onPointerCancel={resetJoystick}
-            className="relative w-32 h-32 rounded-full bg-slate-950/65 border-2 border-slate-500/70 flex items-center justify-center shadow-xl"
+            className="relative w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-slate-950/65 border-2 border-slate-500/70 flex items-center justify-center shadow-xl"
             style={{ touchAction: 'none' }}
           >
-            <div className="w-12 h-12 rounded-full border border-slate-600/60" />
+            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full border border-slate-600/60" />
             <div
-              className="absolute w-12 h-12 rounded-full bg-amber-400/90 border-2 border-white shadow-lg pointer-events-none"
+              className="absolute w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-amber-400/90 border-2 border-white shadow-lg pointer-events-none"
               style={{
                 transform: `translate(${knob.x}px, ${knob.y}px)`,
               }}
@@ -162,7 +166,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
           </div>
         ) : (
           /* Vehicle Left / Right Steering Buttons */
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -174,10 +178,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ steer: 0 });
               }}
               onPointerCancel={() => emit({ steer: 0 })}
-              className="w-16 h-16 rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
+              className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
               aria-label="Steer Left"
             >
-              <ArrowLeft className="w-7 h-7" />
+              <ArrowLeft className="w-6 h-6 sm:w-7 sm:h-7" />
             </button>
             <button
               onPointerDown={(e) => {
@@ -190,19 +194,19 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ steer: 0 });
               }}
               onPointerCancel={() => emit({ steer: 0 })}
-              className="w-16 h-16 rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
+              className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
               aria-label="Steer Right"
             >
-              <ArrowRight className="w-7 h-7" />
+              <ArrowRight className="w-6 h-6 sm:w-7 sm:h-7" />
             </button>
           </div>
         )}
       </div>
 
       {/* RIGHT CONTROL CLUSTER */}
-      <div className="pointer-events-auto flex flex-col items-end gap-2.5" style={{ touchAction: 'none' }}>
+      <div className="pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2.5 max-w-[66vw]" style={{ touchAction: 'none' }}>
         {/* Secondary Quick Action Row */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {inVehicle ? (
             <>
               <button
@@ -210,7 +214,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   e.stopPropagation();
                   onPressHorn();
                 }}
-                className="w-11 h-11 rounded-full bg-slate-950/80 active:bg-slate-700 border border-slate-600 text-slate-200 flex items-center justify-center shadow"
+                className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-slate-950/80 active:bg-slate-700 border border-slate-600 text-slate-200 flex items-center justify-center shadow"
                 aria-label="Horn"
               >
                 <Volume2 className="w-4 h-4" />
@@ -220,7 +224,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   e.stopPropagation();
                   onPressHeadlights();
                 }}
-                className="w-11 h-11 rounded-full bg-slate-950/80 active:bg-yellow-500 active:text-slate-950 border border-slate-600 text-yellow-300 flex items-center justify-center shadow"
+                className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-slate-950/80 active:bg-yellow-500 active:text-slate-950 border border-slate-600 text-yellow-300 flex items-center justify-center shadow"
                 aria-label="Headlights"
               >
                 <Lightbulb className="w-4 h-4" />
@@ -230,9 +234,9 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   e.stopPropagation();
                   onPressEnterExitVehicle();
                 }}
-                className="px-3.5 h-11 rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg"
+                className="px-2.5 sm:px-3.5 h-9 sm:h-11 rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-extrabold text-[11px] sm:text-xs flex items-center gap-1 shadow-lg"
               >
-                <Car className="w-4 h-4" /> {t.exitCar}
+                <Car className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> {t.exitCar}
               </button>
             </>
           ) : (
@@ -244,9 +248,9 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     if (canEnterVehicle) onPressEnterExitVehicle();
                     else onPressInteract();
                   }}
-                  className="px-4 h-12 rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg border border-amber-200"
+                  className="px-3 sm:px-4 h-10 sm:h-12 rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-black text-[11px] sm:text-xs flex items-center gap-1 shadow-lg border border-amber-200"
                 >
-                  {canEnterVehicle ? <Car className="w-4 h-4" /> : <Hand className="w-4 h-4" />}
+                  {canEnterVehicle ? <Car className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Hand className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
                   <span>{canEnterVehicle ? (isStealing ? t.steal : t.drive) : t.interact}</span>
                 </button>
               )}
@@ -256,13 +260,13 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     e.stopPropagation();
                     onPressCycleWeapon();
                   }}
-                  className="px-3 h-12 rounded-full bg-slate-950/85 active:bg-slate-800 border-2 border-slate-500 text-slate-100 text-[11px] font-bold flex items-center gap-1.5 shadow"
+                  className="px-2.5 sm:px-3 h-10 sm:h-12 max-w-[140px] rounded-full bg-slate-950/85 active:bg-slate-800 border-2 border-slate-500 text-slate-100 text-[10px] sm:text-[11px] font-bold flex items-center gap-1 shadow"
                   aria-label="Switch Weapon"
                 >
-                  <Repeat className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{t.weaponNames[weaponId]}</span>
+                  <Repeat className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
+                  <span className="truncate">{t.weaponNames[weaponId]}</span>
                   {weaponId !== 'fists' && (
-                    <span className="text-[10px] text-amber-300 tabular-nums">{ammo}</span>
+                    <span className="text-[9px] sm:text-[10px] text-amber-300 tabular-nums shrink-0">{ammo}</span>
                   )}
                 </button>
               )}
@@ -274,14 +278,14 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     setSprintLocked(next);
                     emit({ sprint: next });
                   }}
-                  className={`w-12 h-12 rounded-full border-2 flex items-center justify-center shadow ${
+                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center shadow ${
                     sprintLocked
                       ? 'bg-sky-500 border-white text-slate-950'
                       : 'bg-slate-950/80 border-slate-600 text-slate-200'
                   }`}
                   aria-label="Sprint"
                 >
-                  <Zap className="w-5 h-5" />
+                  <Zap className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
               )}
             </>
@@ -290,22 +294,57 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
 
         {/* Primary Action Row */}
         {inVehicle ? (
-          <div className="flex items-end gap-2.5">
-            <button
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                emit({ handbrake: true });
-              }}
-              onPointerUp={(e) => {
-                e.stopPropagation();
-                emit({ handbrake: false });
-              }}
-              onPointerCancel={() => emit({ handbrake: false })}
-              className="w-14 h-14 rounded-2xl bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-600 text-amber-400 font-black text-[11px] flex items-center justify-center shadow-lg"
-            >
-              {t.drift}
-            </button>
+          <div className="flex items-end gap-1.5 sm:gap-2.5">
+            {isAirplane ? (
+              <div className="flex flex-col gap-1 sm:gap-1.5">
+                <button
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    emit({ climb: 1 });
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    emit({ climb: 0 });
+                  }}
+                  onPointerCancel={() => emit({ climb: 0 })}
+                  className="w-12 h-9 sm:w-14 sm:h-11 rounded-xl bg-sky-600/90 active:bg-sky-400 active:text-slate-950 border-2 border-sky-300 text-white font-black text-[9px] sm:text-[10px] flex items-center justify-center shadow-lg"
+                >
+                  ▲ {t.climbUp}
+                </button>
+                <button
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    emit({ climb: -1 });
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    emit({ climb: 0 });
+                  }}
+                  onPointerCancel={() => emit({ climb: 0 })}
+                  className="w-12 h-9 sm:w-14 sm:h-11 rounded-xl bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500 text-amber-300 font-black text-[9px] sm:text-[10px] flex items-center justify-center shadow-lg"
+                >
+                  ▼ {t.descendDown}
+                </button>
+              </div>
+            ) : (
+              <button
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  emit({ handbrake: true });
+                }}
+                onPointerUp={(e) => {
+                  e.stopPropagation();
+                  emit({ handbrake: false });
+                }}
+                onPointerCancel={() => emit({ handbrake: false })}
+                className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-600 text-amber-400 font-black text-[10px] sm:text-[11px] flex items-center justify-center shadow-lg"
+              >
+                {t.drift}
+              </button>
+            )}
             <button
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -317,7 +356,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ throttle: 0 });
               }}
               onPointerCancel={() => emit({ throttle: 0 })}
-              className="w-15 h-16 rounded-2xl bg-rose-950/85 active:bg-rose-500 border-2 border-rose-500/80 text-white font-black text-xs flex items-center justify-center shadow-lg"
+              className="w-12 h-14 sm:w-15 sm:h-16 rounded-2xl bg-rose-950/85 active:bg-rose-500 border-2 border-rose-500/80 text-white font-black text-[11px] sm:text-xs flex items-center justify-center shadow-lg"
             >
               {t.brake}
             </button>
@@ -332,28 +371,28 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ throttle: 0 });
               }}
               onPointerCancel={() => emit({ throttle: 0 })}
-              className="w-16 h-20 rounded-2xl bg-emerald-600/90 active:bg-emerald-400 active:text-slate-950 border-2 border-emerald-300 text-white font-black text-xs flex flex-col items-center justify-center shadow-lg"
+              className="w-14 h-16 sm:w-16 sm:h-20 rounded-2xl bg-emerald-600/90 active:bg-emerald-400 active:text-slate-950 border-2 border-emerald-300 text-white font-black text-[11px] sm:text-xs flex flex-col items-center justify-center shadow-lg"
             >
-              <ChevronUp className="w-6 h-6" />
+              <ChevronUp className="w-5 h-5 sm:w-6 sm:h-6" />
               <span>{t.gas}</span>
             </button>
           </div>
         ) : (
-          <div className="flex items-end gap-2.5">
+          <div className="flex items-end gap-1.5 sm:gap-2.5">
             {!isSwimming && (nearPedestrian || weaponId === 'fists') && (
               <button
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   onPressPunch();
                 }}
-                className={`w-16 h-16 rounded-full active:scale-95 border-2 font-black text-[11px] flex flex-col items-center justify-center shadow-xl ${
+                className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full active:scale-95 border-2 font-black text-[10px] sm:text-[11px] flex flex-col items-center justify-center shadow-xl ${
                   nearPedestrian
                     ? 'bg-amber-500 border-amber-200 text-slate-950'
                     : 'bg-orange-600/90 border-orange-300 text-white'
                 }`}
                 aria-label="Punch"
               >
-                <Hand className="w-5 h-5" />
+                <Hand className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>{t.punch}</span>
               </button>
             )}
@@ -369,10 +408,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   onFireChange(false);
                 }}
                 onPointerCancel={() => onFireChange(false)}
-                className="w-16 h-16 rounded-full bg-rose-600/90 active:bg-rose-400 active:text-slate-950 border-2 border-rose-200 text-white font-black text-[11px] flex flex-col items-center justify-center shadow-xl"
+                className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-rose-600/90 active:bg-rose-400 active:text-slate-950 border-2 border-rose-200 text-white font-black text-[10px] sm:text-[11px] flex flex-col items-center justify-center shadow-xl"
                 aria-label="Fire Weapon"
               >
-                <Crosshair className="w-5 h-5" />
+                <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>{t.fire}</span>
               </button>
             )}
@@ -387,9 +426,9 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ jump: false });
               }}
               onPointerCancel={() => emit({ jump: false })}
-              className="w-16 h-16 rounded-full bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500 text-white font-black text-xs flex flex-col items-center justify-center shadow-xl"
+              className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500 text-white font-black text-[10px] sm:text-xs flex flex-col items-center justify-center shadow-xl"
             >
-              <ChevronUp className="w-5 h-5" />
+              <ChevronUp className="w-4 h-4 sm:w-5 sm:h-5" />
               <span>{isSwimming ? t.swim : t.jump}</span>
             </button>
           </div>

@@ -3,6 +3,7 @@ import { ColliderBox, VehicleClassId, WeatherType } from '../types';
 import {
   getBridgeDeckHeight,
   groundHeightAt,
+  MAINLAND_BORDER,
   resolveCircleColliders,
   ROAD_SEGMENTS,
   WATER_LEVEL,
@@ -52,6 +53,10 @@ export interface CollidableVehicle {
 
 export function isBicycleClass(cls: VehicleClassId): boolean {
   return cls === 'bicycle' || cls === 'speed_bicycle';
+}
+
+export function isAirplaneClass(cls: VehicleClassId): boolean {
+  return cls === 'airplane';
 }
 
 export function applyWorldPointDent(
@@ -249,7 +254,9 @@ export function findSafeVehicleSpawnNearPlayer(
   const checkRadius = Math.max(halfW, halfL * 0.55) + 0.55;
 
   const isSpotSafe = (cx: number, cz: number, candHeading: number): boolean => {
-    if (cx < -545 || cx > 545 || cz < -545 || cz > 545) return false;
+    const onMainland = cx >= -530 && cx <= 530 && cz >= -530 && cz <= 530;
+    const onIsland = cx >= -290 && cx <= -70 && cz >= 660 && cz <= 860;
+    if (!onMainland && !onIsland) return false;
     const cy = groundHeightAt(cx, cz);
     if (cy < WATER_LEVEL + 0.3) return false;
     if (Math.abs(cy - py) > 3.5) return false;
@@ -277,7 +284,7 @@ export function findSafeVehicleSpawnNearPlayer(
   };
 
   // Search concentric forward-biased arcs near player
-  const distances = [5.4, 7.6, 10.2, 13.5, 17.5];
+  const distances = [5.4, 7.6, 10.2, 13.5, 17.5, 22.5, 28.0];
   const angleOffsets = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1, Math.PI];
 
   for (const dist of distances) {
@@ -449,11 +456,18 @@ export class VehicleManager {
     dark: boolean;
   }> = [];
   private smokeCursor = 0;
+  private smokeDirty = false;
+  private activeHeadlightSpot: THREE.SpotLight;
   private _dummy = new THREE.Object3D();
   private _color = new THREE.Color();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+    this.activeHeadlightSpot = new THREE.SpotLight(0xfffbeb, 22, 62, Math.PI / 5, 0.45, 1.4);
+    this.activeHeadlightSpot.visible = false;
+    scene.add(this.activeHeadlightSpot);
+    scene.add(this.activeHeadlightSpot.target);
+
     const smokeGeo = new THREE.SphereGeometry(0.28, 6, 6);
     const smokeMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -581,12 +595,16 @@ export class VehicleManager {
       { classId: 'coupe', x: 260, z: -225, heading: 0 },
       { classId: 'hyper_viper', x: 22, z: -48, heading: Math.PI * 0.5 },
       { classId: 'track_phantom', x: -195, z: -135, heading: 0 },
+      { classId: 'nova_x', x: -18, z: -34, heading: Math.PI * 0.5 },
       { classId: 'nova_x', x: 300, z: -260, heading: -Math.PI * 0.5 },
       { classId: 'police', x: 52, z: -26, heading: Math.PI },
+      // Flyable Airplanes (1 at Skyline Airport Runway, 1 at Palm Cove Island for return flight)
+      { classId: 'airplane', x: 262, z: -310, heading: Math.PI * 0.5 },
+      { classId: 'airplane', x: -180, z: 730, heading: Math.PI },
     ];
 
     spawns.forEach((s, i) => {
-      this.spawnVehicle(`world_veh_${i}`, s.classId, s.x, s.z, s.heading);
+      this.spawnVehicle(`world_veh_${i}`, s.classId, s.x, s.z, s.heading, undefined, false);
     });
   }
 
@@ -647,25 +665,32 @@ export class VehicleManager {
   public update(
     dt: number,
     activeVehicle: WorldVehicle | null,
-    input: { throttle: number; steer: number; handbrake: boolean },
+    input: { throttle: number; steer: number; handbrake: boolean; climb?: number },
     colliders: ColliderBox[],
     weather: WeatherType,
     isNight: boolean,
     onCollision: (intensity: number) => void,
-    onVehicleExploded: (v: WorldVehicle) => void
+    onVehicleExploded: (v: WorldVehicle) => void,
+    onHitWorldBorder?: () => void,
+    focusX = 0,
+    focusZ = 0
   ): void {
     this.signalTimer += dt;
     const blinkOn = Math.floor(this.signalTimer * 2.5) % 2 === 0;
     const rainGripFactor = weather === 'rain' ? 0.72 : 1.0;
+    let activeSpotUsed = false;
 
     for (const v of this.vehicles) {
       const spec = v.rig.spec;
       const isBike = isBicycleClass(v.classId);
+      const isPlane = isAirplaneClass(v.classId);
+      const terrainFloorNow = groundHeightAt(v.x, v.z);
+      const isAirborne = isPlane && v.y > terrainFloorNow + 0.45;
 
       if (v === activeVehicle && !v.exploded) {
         const accel = input.throttle > 0 ? spec.acceleration : spec.braking;
-        const targetSteer = input.steer * 0.54;
-        v.steerAngle = THREE.MathUtils.damp(v.steerAngle, targetSteer, 10, dt);
+        const targetSteer = input.steer * (isPlane ? 0.62 : 0.54);
+        v.steerAngle = THREE.MathUtils.damp(v.steerAngle, targetSteer, isPlane ? 7 : 10, dt);
 
         const fwdX = Math.sin(v.heading);
         const fwdZ = Math.cos(v.heading);
@@ -686,28 +711,32 @@ export class VehicleManager {
             fSpeed += input.throttle * spec.acceleration * 0.65 * dt;
           }
         } else {
-          fSpeed = THREE.MathUtils.damp(fSpeed, 0, isBike ? 1.8 : 1.35, dt);
+          fSpeed = THREE.MathUtils.damp(fSpeed, isAirborne ? 32 : 0, isPlane ? 0.45 : isBike ? 1.8 : 1.35, dt);
         }
 
-        if (input.handbrake) {
+        if (input.handbrake && !isPlane) {
           fSpeed = THREE.MathUtils.damp(fSpeed, 0, 2.8, dt);
           v.braking = true;
         }
 
-        fSpeed = THREE.MathUtils.clamp(fSpeed, -spec.reverseSpeed, spec.maxSpeed);
+        fSpeed = THREE.MathUtils.clamp(fSpeed, isPlane ? -8 : -spec.reverseSpeed, spec.maxSpeed);
 
-        const speedFactor = Math.min(1, Math.abs(fSpeed) / (isBike ? 2.5 : 6.5));
+        const speedFactor = isPlane
+          ? Math.max(0.35, Math.min(1, Math.abs(fSpeed) / 14))
+          : Math.min(1, Math.abs(fSpeed) / (isBike ? 2.5 : 6.5));
         const dirSign = fSpeed >= -0.2 ? 1 : -1;
         const turnRate =
-          v.steerAngle * spec.steeringSpeed * speedFactor * dirSign * (input.handbrake ? 1.35 : 1.0);
+          v.steerAngle * spec.steeringSpeed * speedFactor * dirSign * (!isPlane && input.handbrake ? 1.35 : 1.0);
         v.heading += turnRate * dt;
 
-        const gripLambda = input.handbrake
-          ? 2.2 * rainGripFactor
-          : (1 - spec.driftGrip) * 65 * rainGripFactor + 3.5;
+        const gripLambda = isPlane
+          ? 5.5
+          : input.handbrake
+            ? 2.2 * rainGripFactor
+            : (1 - spec.driftGrip) * 65 * rainGripFactor + 3.5;
         latSpeed = THREE.MathUtils.damp(latSpeed, 0, gripLambda, dt);
 
-        v.drifting = !isBike && (Math.abs(latSpeed) > 3.8 || (input.handbrake && Math.abs(fSpeed) > 8));
+        v.drifting = !isBike && !isPlane && (Math.abs(latSpeed) > 3.8 || (input.handbrake && Math.abs(fSpeed) > 8));
 
         const newFwdX = Math.sin(v.heading);
         const newFwdZ = Math.cos(v.heading);
@@ -719,11 +748,43 @@ export class VehicleManager {
         v.forwardSpeed = fSpeed;
         v.pedalPhase += Math.abs(fSpeed) * dt * 1.45;
 
-        const targetPitch = -input.throttle * 0.045 + (v.braking ? 0.055 : 0);
-        const leanFactor = isBike || v.classId === 'motorcycle' ? -0.35 : -0.14;
-        const targetRoll = v.steerAngle * Math.min(1, Math.abs(fSpeed) / 14) * leanFactor;
-        v.pitch = THREE.MathUtils.damp(v.pitch, targetPitch, 9, dt);
-        v.roll = THREE.MathUtils.damp(v.roll, targetRoll, 9, dt);
+        // Airplane vertical takeoff, climb (Space / climb > 0), and descent (Shift / climb < 0)
+        if (isPlane) {
+          const climbInput = input.climb ?? (input.handbrake ? 1 : 0);
+          if (fSpeed > 18) {
+            if (climbInput > 0.1) {
+              v.vy = THREE.MathUtils.damp(v.vy, 16, 4.5, dt);
+            } else if (climbInput < -0.1) {
+              v.vy = THREE.MathUtils.damp(v.vy, -14, 4.5, dt);
+            } else if (v.y <= terrainFloorNow + 0.25 && fSpeed > 38 && input.throttle > 0.2) {
+              // Gentle natural runway liftoff at high takeoff speed
+              v.vy = 6.5;
+            } else if (v.y > terrainFloorNow + 0.35) {
+              v.vy = THREE.MathUtils.damp(v.vy, 0, 3.8, dt);
+            }
+          } else if (v.y > terrainFloorNow + 0.2) {
+            // Glide down gently when slowing below stall speed
+            v.vy = THREE.MathUtils.damp(v.vy, -6.5, 2.5, dt);
+          }
+
+          if (v.y > 145) {
+            v.y = 145;
+            v.vy = Math.min(0, v.vy);
+          }
+          v.y += v.vy * dt;
+
+          const targetPlanePitch = THREE.MathUtils.clamp(-v.vy * 0.025, -0.35, 0.32);
+          const airFactor = v.y > terrainFloorNow + 0.45 ? 1.0 : 0.25;
+          const targetPlaneRoll = -v.steerAngle * 0.65 * airFactor;
+          v.pitch = THREE.MathUtils.damp(v.pitch, targetPlanePitch, 6, dt);
+          v.roll = THREE.MathUtils.damp(v.roll, targetPlaneRoll, 6, dt);
+        } else {
+          const targetPitch = -input.throttle * 0.045 + (v.braking ? 0.055 : 0);
+          const leanFactor = isBike || v.classId === 'motorcycle' ? -0.35 : -0.14;
+          const targetRoll = v.steerAngle * Math.min(1, Math.abs(fSpeed) / 14) * leanFactor;
+          v.pitch = THREE.MathUtils.damp(v.pitch, targetPitch, 9, dt);
+          v.roll = THREE.MathUtils.damp(v.roll, targetRoll, 9, dt);
+        }
 
         if (v.drifting && Math.random() < 0.55) {
           const rearX = v.x - newFwdX * (spec.length * 0.34);
@@ -731,8 +792,8 @@ export class VehicleManager {
           this.emitSmoke(rearX, v.y, rearZ, false);
         }
       } else {
-        v.vx = THREE.MathUtils.damp(v.vx, 0, 3.5, dt);
-        v.vz = THREE.MathUtils.damp(v.vz, 0, 3.5, dt);
+        v.vx = THREE.MathUtils.damp(v.vx, 0, isPlane ? 1.4 : 3.5, dt);
+        v.vz = THREE.MathUtils.damp(v.vz, 0, isPlane ? 1.4 : 3.5, dt);
         v.forwardSpeed = Math.hypot(v.vx, v.vz);
         v.pitch = THREE.MathUtils.damp(v.pitch, v.exploded && !isBike ? 0.06 : 0, 6, dt);
         if (!v.exploded) {
@@ -741,101 +802,179 @@ export class VehicleManager {
         v.drifting = false;
       }
 
+      // Spin airplane propeller
+      if (isPlane && v.rig.propellerPivot && !v.exploded) {
+        const rpmSpeed = v === activeVehicle ? 16 + Math.abs(v.forwardSpeed) * 0.9 : Math.abs(v.forwardSpeed) * 0.8;
+        v.rig.propellerPivot.rotation.z += rpmSpeed * dt;
+      }
+
       if (!isBike && (v.hp < 40 || v.exploded) && Math.random() < (v.exploded ? 0.45 : 0.3)) {
         const hoodX = v.x + Math.sin(v.heading) * (spec.length * 0.34);
         const hoodZ = v.z + Math.cos(v.heading) * (spec.length * 0.34);
         this.emitSmoke(hoodX, v.y + spec.height * 0.55, hoodZ, true);
       }
 
-      const nextX = THREE.MathUtils.clamp(v.x + v.vx * dt, -560, 560);
-      const nextZ = THREE.MathUtils.clamp(v.z + v.vz * dt, -560, 560);
-      const radius = spec.width * 0.55;
-      const col = resolveCircleColliders(nextX, nextZ, v.y, radius, colliders);
+      const isResting =
+        v !== activeVehicle &&
+        !v.exploded &&
+        !isPlane &&
+        Math.abs(v.vx) < 0.01 &&
+        Math.abs(v.vz) < 0.01 &&
+        Math.abs(v.vy) < 0.01 &&
+        Math.abs(v.pitch) < 0.005 &&
+        Math.abs(v.roll) < 0.005;
 
-      if (col.hit) {
-        const impactSpeed = Math.hypot(v.vx, v.vz);
-        const minHit = isBike ? 1.8 : 2.8;
-        if (impactSpeed > minHit) {
-          const hitDirX = col.x - nextX;
-          const hitDirZ = col.z - nextZ;
-          const contactX = v.x - hitDirX * 2;
-          const contactZ = v.z - hitDirZ * 2;
-          const sev = Math.min(0.95, (impactSpeed / 25) * (isBike ? 1.5 : 1.0));
-          applyWorldPointDent(v.rig, v.x, v.z, v.heading, contactX, contactZ, sev);
-          if (v === activeVehicle) {
-            onCollision(Math.min(1, impactSpeed / 26));
-            const dmg = computeSpeedDamage(impactSpeed, 1.0, isBike ? 3.2 : 1.0);
-            this.applyDamage(v, dmg, onVehicleExploded);
-          }
+      if (!isResting) {
+        // World border limits: ground vehicles are locked strictly to Mainland [-MAINLAND_BORDER..MAINLAND_BORDER];
+        // Airplanes unlock outer ocean airspace to reach Palm Cove Island (-180, 760) & return!
+        const rawNextX = v.x + v.vx * dt;
+        const rawNextZ = v.z + v.vz * dt;
+        const minX = isPlane ? -710 : -MAINLAND_BORDER;
+        const maxX = isPlane ? 710 : MAINLAND_BORDER;
+        const minZ = isPlane ? -600 : -MAINLAND_BORDER;
+        const maxZ = isPlane ? 960 : MAINLAND_BORDER;
+        const nextX = THREE.MathUtils.clamp(rawNextX, minX, maxX);
+        const nextZ = THREE.MathUtils.clamp(rawNextZ, minZ, maxZ);
+
+        if (v === activeVehicle && (nextX !== rawNextX || nextZ !== rawNextZ)) {
+          v.vx *= 0.2;
+          v.vz *= 0.2;
+          if (onHitWorldBorder) onHitWorldBorder();
         }
-        v.vx *= -0.25;
-        v.vz *= -0.25;
-      }
-      v.x = col.x;
-      v.z = col.z;
 
-      const terrainY = groundHeightAt(v.x, v.z);
-      const bridgeY = getBridgeDeckHeight(v.x, v.z);
-      let supportY = terrainY;
-      if (bridgeY !== null && v.y >= bridgeY - 1.8) {
-        supportY = Math.max(terrainY, bridgeY);
-      }
+        const radius = isPlane ? 2.1 : spec.width * 0.55;
+        const col = resolveCircleColliders(nextX, nextZ, v.y, radius, colliders);
 
-      if (v.y > supportY + 0.05 || v.vy > 0.2) {
-        v.vy -= 22 * dt;
-        v.y += v.vy * dt;
-        if (v.y <= supportY) {
-          if (v.vy < -8 && v === activeVehicle) {
-            onCollision(Math.min(1, Math.abs(v.vy) / 18));
+        if (col.hit) {
+          const impactSpeed = Math.hypot(v.vx, v.vz);
+          const minHit = isBike ? 1.8 : 2.8;
+          if (impactSpeed > minHit) {
+            const hitDirX = col.x - nextX;
+            const hitDirZ = col.z - nextZ;
+            const contactX = v.x - hitDirX * 2;
+            const contactZ = v.z - hitDirZ * 2;
+            const sev = Math.min(0.95, (impactSpeed / 25) * (isBike ? 1.5 : 1.0));
+            applyWorldPointDent(v.rig, v.x, v.z, v.heading, contactX, contactZ, sev);
+            if (v === activeVehicle) {
+              onCollision(Math.min(1, impactSpeed / 26));
+              const dmg = computeSpeedDamage(impactSpeed, 1.0, isBike ? 3.2 : isPlane ? 0.65 : 1.0);
+              this.applyDamage(v, dmg, onVehicleExploded);
+            }
           }
+          v.vx *= -0.25;
+          v.vz *= -0.25;
+        }
+        v.x = col.x;
+        v.z = col.z;
+
+        const terrainY = groundHeightAt(v.x, v.z);
+        const bridgeY = getBridgeDeckHeight(v.x, v.z);
+        let supportY = terrainY;
+        if (bridgeY !== null && v.y >= bridgeY - 1.8) {
+          supportY = Math.max(terrainY, bridgeY);
+        }
+
+        if (isPlane) {
+          if (v.y <= supportY) {
+            v.y = supportY;
+            if (v.vy < -15 && v === activeVehicle) {
+              onCollision(Math.min(1, Math.abs(v.vy) / 22));
+              this.applyDamage(v, Math.round(Math.abs(v.vy) * 1.6), onVehicleExploded);
+            }
+            v.vy = Math.max(0, v.vy);
+          } else if (v !== activeVehicle && v.y > supportY + 0.05) {
+            v.vy -= 18 * dt;
+            v.y = Math.max(supportY, v.y + v.vy * dt);
+          }
+        } else if (v.y > supportY + 0.05 || v.vy > 0.2) {
+          v.vy -= 22 * dt;
+          v.y += v.vy * dt;
+          if (v.y <= supportY) {
+            if (v.vy < -8 && v === activeVehicle) {
+              onCollision(Math.min(1, Math.abs(v.vy) / 18));
+            }
+            v.y = supportY;
+            v.vy = 0;
+          }
+        } else {
           v.y = supportY;
           v.vy = 0;
         }
-      } else {
-        v.y = supportY;
-        v.vy = 0;
-      }
 
-      if (v.y < WATER_LEVEL - 0.5) {
-        v.vx *= 0.92;
-        v.vz *= 0.92;
-      }
-
-      v.rig.root.position.set(v.x, v.y, v.z);
-      v.rig.root.rotation.y = v.heading;
-      v.rig.bodyGroup.rotation.x = v.pitch;
-      v.rig.bodyGroup.rotation.z = v.roll;
-
-      const spinDelta = (v.forwardSpeed * dt) / spec.wheelRadius;
-      v.rig.wheelPivots.forEach((pivot, idx) => {
-        if ((v.classId === 'motorcycle' || isBike ? idx === 0 : idx < 2)) {
-          pivot.rotation.y = v.steerAngle;
+        if (v.y < WATER_LEVEL - 0.5 && !isPlane) {
+          v.vx *= 0.92;
+          v.vz *= 0.92;
         }
-      });
-      v.rig.wheelSpinMeshes.forEach((m) => {
-        m.rotation.x += spinDelta;
-      });
+
+        v.rig.root.position.set(v.x, v.y, v.z);
+        v.rig.root.rotation.y = v.heading;
+        v.rig.bodyGroup.rotation.x = v.pitch;
+        v.rig.bodyGroup.rotation.z = v.roll;
+
+        const spinDelta = (v.forwardSpeed * dt) / spec.wheelRadius;
+        for (let idx = 0; idx < v.rig.wheelPivots.length; idx++) {
+          if (isPlane ? idx === 0 : v.classId === 'motorcycle' || isBike ? idx === 0 : idx < 2) {
+            v.rig.wheelPivots[idx].rotation.y = v.steerAngle;
+          }
+        }
+        for (let idx = 0; idx < v.rig.wheelSpinMeshes.length; idx++) {
+          v.rig.wheelSpinMeshes[idx].rotation.x += spinDelta;
+        }
+      }
 
       const lightsActive = !v.exploded && (v.occupiedByPlayer ? v.headlightsOn || isNight : isNight);
-      v.rig.headlightMeshes.forEach((hl) => {
-        (hl.material as THREE.MeshStandardMaterial).emissiveIntensity = lightsActive ? 2.4 : 0.15;
-      });
-      if (v.rig.headlightSpot) {
-        v.rig.headlightSpot.intensity = lightsActive ? 22 : 0;
+      const targetHeadGlow = v.classId === 'nova_x' ? (lightsActive ? 2.6 : 1.75) : lightsActive ? 2.4 : 0.15;
+      const heads = v.rig.headlightMeshes;
+      if (heads.length > 0 && (heads[0].material as THREE.MeshStandardMaterial).emissiveIntensity !== targetHeadGlow) {
+        for (let idx = 0; idx < heads.length; idx++) {
+          (heads[idx].material as THREE.MeshStandardMaterial).emissiveIntensity = targetHeadGlow;
+        }
       }
-      v.rig.taillightMeshes.forEach((tl) => {
-        (tl.material as THREE.MeshStandardMaterial).emissiveIntensity = v.exploded
-          ? 0
-          : v.braking
-            ? 2.8
+
+      if (v === activeVehicle && lightsActive && !isBike) {
+        activeSpotUsed = true;
+        const sinH = Math.sin(v.heading);
+        const cosH = Math.cos(v.heading);
+        this.activeHeadlightSpot.visible = true;
+        this.activeHeadlightSpot.color.setHex(v.classId === 'nova_x' ? 0xe0ffff : 0xfffbeb);
+        this.activeHeadlightSpot.position.set(v.x + sinH * (spec.length * 0.48), v.y + 0.85, v.z + cosH * (spec.length * 0.48));
+        this.activeHeadlightSpot.target.position.set(v.x + sinH * (spec.length * 0.5 + 18), v.y, v.z + cosH * (spec.length * 0.5 + 18));
+        this.activeHeadlightSpot.target.updateMatrixWorld();
+      }
+
+      if (v.rig.underglowLight) {
+        const dSq = (v.x - focusX) * (v.x - focusX) + (v.z - focusZ) * (v.z - focusZ);
+        const showUnderglow = !v.exploded && (v === activeVehicle || dSq < 3025);
+        v.rig.underglowLight.visible = showUnderglow;
+        if (showUnderglow) {
+          v.rig.underglowLight.intensity = isNight ? 8.5 : 5.5;
+        }
+      }
+
+      const targetTailGlow = v.exploded
+        ? 0
+        : v.braking
+          ? 2.8
+          : v.classId === 'nova_x'
+            ? 1.5
             : lightsActive
               ? 0.9
               : 0.2;
-      });
-      (v.rig.leftSignalMesh.material as THREE.MeshStandardMaterial).emissiveIntensity =
-        !v.exploded && v.turnSignal === -1 && blinkOn ? 2.6 : 0;
-      (v.rig.rightSignalMesh.material as THREE.MeshStandardMaterial).emissiveIntensity =
-        !v.exploded && v.turnSignal === 1 && blinkOn ? 2.6 : 0;
+      const tails = v.rig.taillightMeshes;
+      if (tails.length > 0 && (tails[0].material as THREE.MeshStandardMaterial).emissiveIntensity !== targetTailGlow) {
+        for (let idx = 0; idx < tails.length; idx++) {
+          (tails[idx].material as THREE.MeshStandardMaterial).emissiveIntensity = targetTailGlow;
+        }
+      }
+
+      const leftSigGlow = !v.exploded && v.turnSignal === -1 && blinkOn ? 2.6 : 0;
+      const rightSigGlow = !v.exploded && v.turnSignal === 1 && blinkOn ? 2.6 : 0;
+      if ((v.rig.leftSignalMesh.material as THREE.MeshStandardMaterial).emissiveIntensity !== leftSigGlow) {
+        (v.rig.leftSignalMesh.material as THREE.MeshStandardMaterial).emissiveIntensity = leftSigGlow;
+      }
+      if ((v.rig.rightSignalMesh.material as THREE.MeshStandardMaterial).emissiveIntensity !== rightSigGlow) {
+        (v.rig.rightSignalMesh.material as THREE.MeshStandardMaterial).emissiveIntensity = rightSigGlow;
+      }
 
       if ((v.classId === 'police' || v.classId === 'ambulance') && v.rig.lightbarRed && v.rig.lightbarBlue) {
         const strobe = Math.floor(this.signalTimer * 7) % 2 === 0;
@@ -845,6 +984,9 @@ export class VehicleManager {
         (v.rig.lightbarBlue.material as THREE.MeshStandardMaterial).emissiveIntensity =
           active && !strobe ? 3.5 : 0.2;
       }
+    }
+    if (!activeSpotUsed && this.activeHeadlightSpot.visible) {
+      this.activeHeadlightSpot.visible = false;
     }
 
     // Active player vehicle vs parked WorldVehicles physical collision
@@ -899,9 +1041,11 @@ export class VehicleManager {
     }
 
     let anySmokeColor = false;
+    let anySmokeUpdated = false;
     for (let i = 0; i < this.smokeCount; i++) {
       const p = this.smokeData[i];
       if (!p.active) continue;
+      anySmokeUpdated = true;
       p.age += dt;
       if (p.age >= p.maxAge) {
         p.active = false;
@@ -921,7 +1065,10 @@ export class VehicleManager {
       this._dummy.updateMatrix();
       this.smokeMesh.setMatrixAt(i, this._dummy.matrix);
     }
-    this.smokeMesh.instanceMatrix.needsUpdate = true;
+    if (anySmokeUpdated || this.smokeDirty) {
+      this.smokeMesh.instanceMatrix.needsUpdate = true;
+      this.smokeDirty = anySmokeUpdated;
+    }
     if (anySmokeColor && this.smokeMesh.instanceColor) {
       this.smokeMesh.instanceColor.needsUpdate = true;
     }

@@ -51,7 +51,8 @@ export type DistrictId =
   | 'airport'
   | 'port'
   | 'countryside'
-  | 'highway';
+  | 'highway'
+  | 'island';
 
 export interface DistrictInfo {
   id: DistrictId;
@@ -87,7 +88,18 @@ export type VehicleClassId =
   | 'motorcycle'
   | 'bicycle'
   | 'speed_bicycle'
-  | 'police';
+  | 'police'
+  | 'airplane'
+  | 'meme_banana'
+  | 'meme_head'
+  | 'meme_toilet'
+  | 'meme_duck'
+  | 'meme_burger'
+  | 'meme_shoe'
+  | 'meme_shark'
+  | 'meme_cat'
+  | 'meme_hotdog'
+  | 'meme_toast';
 
 export interface VehicleSpec {
   id: VehicleClassId;
@@ -206,6 +218,9 @@ export interface HudSnapshot {
   timePhase: TimePhase;
   weather: WeatherType;
   inVehicle: boolean;
+  isAirplane: boolean;
+  altitude: number;
+  firstPerson: boolean;
   vehicleName: string;
   vehicleMaxKmh: number;
   vehicleHealth: number; // 0..100
@@ -247,5 +262,6 @@ export interface HudSnapshot {
   muted: boolean;
   fps: number;
   qualityMode: QualityMode;
+  devUnlocked: boolean;
   completedMissionIds: string[];
 }

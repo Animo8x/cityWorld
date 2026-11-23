@@ -5,9 +5,23 @@ export class ThirdPersonCameraController {
   public yaw = 0;
   public pitch = 0.28;
   public distance = 6.5;
+  public firstPerson = false;
   private currentTarget = new THREE.Vector3(0, 1.5, -20);
   private currentPos = new THREE.Vector3(0, 4, -13);
   private shakeIntensity = 0;
+
+  public toggleFirstPerson(targetHeading?: number): boolean {
+    this.firstPerson = !this.firstPerson;
+    if (this.firstPerson) {
+      this.pitch = 0.02;
+      if (targetHeading !== undefined) {
+        this.yaw = targetHeading + Math.PI;
+      }
+    } else {
+      this.pitch = 0.28;
+    }
+    return this.firstPerson;
+  }
 
   public addShake(amount: number): void {
     this.shakeIntensity = Math.min(1.0, this.shakeIntensity + amount);
@@ -15,7 +29,9 @@ export class ThirdPersonCameraController {
 
   public rotate(dx: number, dy: number): void {
     this.yaw -= dx * 0.0042;
-    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.0036, -0.18, 1.15);
+    const minPitch = this.firstPerson ? -0.95 : -0.18;
+    const maxPitch = this.firstPerson ? 0.95 : 1.15;
+    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.0036, minPitch, maxPitch);
   }
 
   public zoom(deltaY: number): void {
@@ -39,9 +55,74 @@ export class ThirdPersonCameraController {
     inVehicle: boolean,
     speedRatio: number,
     autoAlign: boolean,
-    inInterior: boolean
+    inInterior: boolean,
+    vehicleType: 'none' | 'car' | 'bike' | 'airplane' = 'none'
   ): void {
-    // Gently auto-align camera behind moving vehicle unless user recently orbited
+    if (this.firstPerson) {
+      if (Math.abs(camera.near - 0.08) > 0.005) {
+        camera.near = 0.08;
+        camera.updateProjectionMatrix();
+      }
+
+      // Gently re-center driver gaze forward along vehicle heading if not manually looking around
+      if (inVehicle && autoAlign) {
+        const desiredYaw = targetHeading + Math.PI;
+        let diff = desiredYaw - this.yaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        this.yaw += diff * Math.min(1, 5.2 * dt);
+        this.pitch = THREE.MathUtils.damp(this.pitch, vehicleType === 'airplane' ? -0.02 : -0.04, 4, dt);
+      }
+
+      const fwdX = Math.sin(targetHeading);
+      const fwdZ = Math.cos(targetHeading);
+      const eyeY =
+        vehicleType === 'bike'
+          ? 1.48
+          : vehicleType === 'airplane'
+            ? 1.78
+            : vehicleType === 'car'
+              ? 1.24
+              : 1.66;
+      const forwardBias =
+        vehicleType === 'car' ? 0.55 : vehicleType === 'airplane' ? 1.15 : vehicleType === 'bike' ? 0.18 : 0.0;
+
+      const desiredEyeX = targetX + fwdX * forwardBias;
+      const desiredEyeY = targetY + eyeY;
+      const desiredEyeZ = targetZ + fwdZ * forwardBias;
+
+      // Instant or near-instant lock so driver seat never lags behind fast cars
+      camera.position.set(desiredEyeX, desiredEyeY, desiredEyeZ);
+      if (this.shakeIntensity > 0.005) {
+        camera.position.x += (Math.random() - 0.5) * this.shakeIntensity * 0.25;
+        camera.position.y += (Math.random() - 0.5) * this.shakeIntensity * 0.25;
+        this.shakeIntensity = THREE.MathUtils.damp(this.shakeIntensity, 0, 10, dt);
+      }
+
+      const targetFov = inVehicle ? 72 + speedRatio * 10 : 70;
+      if (Math.abs(camera.fov - targetFov) > 0.1) {
+        camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 8, dt);
+        camera.updateProjectionMatrix();
+      }
+
+      // Look direction from camera yaw/pitch
+      const lookDirX = -Math.sin(this.yaw) * Math.cos(this.pitch);
+      const lookDirY = -Math.sin(this.pitch);
+      const lookDirZ = -Math.cos(this.yaw) * Math.cos(this.pitch);
+      camera.lookAt(
+        camera.position.x + lookDirX * 20,
+        camera.position.y + lookDirY * 20,
+        camera.position.z + lookDirZ * 20
+      );
+      return;
+    }
+
+    if (Math.abs(camera.near - 0.2) > 0.01) {
+      camera.near = 0.2;
+      camera.updateProjectionMatrix();
+    }
+
+    // Gently auto-align 3rd-person camera behind moving vehicle unless user recently orbited
     if (inVehicle && autoAlign && speedRatio > 0.12) {
       const desiredYaw = targetHeading + Math.PI;
       let diff = desiredYaw - this.yaw;
@@ -50,9 +131,15 @@ export class ThirdPersonCameraController {
       this.yaw += diff * Math.min(1, 2.1 * dt);
     }
 
-    const baseDist = inInterior ? 4.4 : inVehicle ? Math.max(7.2, this.distance * 1.28) : this.distance;
-    const desiredDist = baseDist + speedRatio * (inVehicle ? 2.8 : 0.8);
-    const lookHeight = inVehicle ? 1.5 : 1.55;
+    const baseDist = inInterior
+      ? 4.4
+      : vehicleType === 'airplane'
+        ? Math.max(11.5, this.distance * 1.55)
+        : inVehicle
+          ? Math.max(7.2, this.distance * 1.28)
+          : this.distance;
+    const desiredDist = baseDist + speedRatio * (vehicleType === 'airplane' ? 4.2 : inVehicle ? 2.8 : 0.8);
+    const lookHeight = vehicleType === 'airplane' ? 1.85 : inVehicle ? 1.5 : 1.55;
 
     this.currentTarget.x = THREE.MathUtils.damp(this.currentTarget.x, targetX, 16, dt);
     this.currentTarget.y = THREE.MathUtils.damp(this.currentTarget.y, targetY + lookHeight, 16, dt);
@@ -64,7 +151,6 @@ export class ThirdPersonCameraController {
     let desiredY = this.currentTarget.y + sinP * desiredDist;
     const desiredZ = this.currentTarget.z + Math.cos(this.yaw) * cosP * desiredDist;
 
-    // Terrain / ground collision clamp so camera never sinks below ground
     if (!inInterior) {
       const groundY = groundHeightAt(desiredX, desiredZ);
       const bridgeY = getBridgeDeckHeight(desiredX, desiredZ);

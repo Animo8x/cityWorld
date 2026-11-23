@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ColliderBox, PlayerSkinId, WeaponId } from '../types';
-import { getBridgeDeckHeight, groundHeightAt, resolveCircleColliders, WATER_LEVEL } from '../world/worldLayout';
+import { getBridgeDeckHeight, groundHeightAt, MAINLAND_BORDER, resolveCircleColliders, WATER_LEVEL } from '../world/worldLayout';
 import { PLAYER_SKINS } from './skinCatalog';
 
 export class PlayerController {
@@ -319,7 +319,8 @@ export class PlayerController {
     cameraYaw: number,
     colliders: ColliderBox[],
     onFootstep: (sprinting: boolean, inWater: boolean) => void,
-    onFallImpact: (damage: number) => void
+    onFallImpact: (damage: number) => void,
+    onHitWorldBorder?: () => void
   ): void {
     const hasMove = Math.abs(input.moveX) > 0.05 || Math.abs(input.moveZ) > 0.05;
     this.isSprinting = hasMove && input.sprint && this.stamina > 2 && !this.isSwimming;
@@ -355,17 +356,29 @@ export class PlayerController {
       this.vz = THREE.MathUtils.damp(this.vz, 0, 14, dt);
     }
 
-    // Horizontal move + collision
-    let nextX = this.x + this.vx * dt;
-    let nextZ = this.z + this.vz * dt;
+    // Horizontal move + collision (strict mainland world border on foot/swim, unless already landed on Island!)
+    const rawNextX = this.x + this.vx * dt;
+    const rawNextZ = this.z + this.vz * dt;
+    let nextX = rawNextX;
+    let nextZ = rawNextZ;
     if (this.inInterior) {
       // Keep inside room bounds centered near current interior center
       const roomCenterX = Math.round(this.x / 120) * 120;
       nextX = THREE.MathUtils.clamp(nextX, roomCenterX - this.interiorHalfW, roomCenterX + this.interiorHalfW);
       nextZ = THREE.MathUtils.clamp(nextZ, -this.interiorHalfD, this.interiorHalfD);
     } else {
-      nextX = THREE.MathUtils.clamp(nextX, -565, 565);
-      nextZ = THREE.MathUtils.clamp(nextZ, -565, 565);
+      const onIslandAlready = this.z > 620;
+      if (onIslandAlready) {
+        // Keep safely on/around the Tropical Island beach perimeter when walking on the Island
+        nextX = THREE.MathUtils.clamp(nextX, -295, -65);
+        nextZ = THREE.MathUtils.clamp(nextZ, 645, 875);
+      } else {
+        nextX = THREE.MathUtils.clamp(nextX, -MAINLAND_BORDER, MAINLAND_BORDER);
+        nextZ = THREE.MathUtils.clamp(nextZ, -MAINLAND_BORDER, MAINLAND_BORDER);
+      }
+      if ((nextX !== rawNextX || nextZ !== rawNextZ) && onHitWorldBorder) {
+        onHitWorldBorder();
+      }
       const col = resolveCircleColliders(nextX, nextZ, this.y, 0.42, colliders);
       nextX = col.x;
       nextZ = col.z;

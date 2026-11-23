@@ -15,18 +15,19 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
   const t = getText(hud.language);
   const isRtl = hud.language === 'ar';
 
-  // World coordinate space: [-560..560] -> SVG [0..800]
+  // World coordinate space covering mainland + southern Palm Cove Island:
+  // x: [-740..740] (span 1480), z: [-580..900] (span 1480) -> SVG [0..800]
   const toSvg = (wx: number, wz: number) => ({
-    x: ((wx + 560) / 1120) * 800,
-    y: ((wz + 560) / 1120) * 800,
+    x: ((wx + 740) / 1480) * 800,
+    y: ((wz + 580) / 1480) * 800,
   });
 
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width;
     const ny = (e.clientY - rect.top) / rect.height;
-    const wx = Math.round(nx * 1120 - 560);
-    const wz = Math.round(ny * 1120 - 560);
+    const wx = Math.round(nx * 1480 - 740);
+    const wz = Math.round(ny * 1480 - 580);
     onSetWaypoint({ x: wx, z: wz });
   };
 
@@ -137,8 +138,11 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
               onClick={handleSvgClick}
               className="w-full h-full cursor-crosshair bg-[#29432d]"
             >
-              {/* Districts */}
-              {DISTRICTS.filter((d) => d.id !== 'highway').map((d) => {
+              {/* Ocean South + World Sea Border */}
+              <rect x={0} y={toSvg(0, 345).y} width={800} height={500} fill="#0c4a6e" opacity={0.92} />
+
+              {/* Districts (Mainland & Island) */}
+              {DISTRICTS.filter((d) => d.id !== 'highway' && d.id !== 'island').map((d) => {
                 const tl = toSvg(d.bounds.minX, d.bounds.minZ);
                 const br = toSvg(d.bounds.maxX, d.bounds.maxZ);
                 return (
@@ -157,15 +161,54 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
                 );
               })}
 
-              {/* Ocean South */}
-              <rect x={0} y={toSvg(0, 345).y} width={800} height={300} fill="#0c4a6e" opacity={0.9} />
+              {/* Palm Cove Island sandy landmass & Airstrip */}
+              <ellipse
+                cx={toSvg(-180, 760).x}
+                cy={toSvg(-180, 760).y}
+                rx={64}
+                ry={52}
+                fill="#eab308"
+                opacity={0.85}
+                stroke="#fde047"
+                strokeWidth={2}
+              />
+              <ellipse
+                cx={toSvg(-180, 760).x}
+                cy={toSvg(-180, 760).y}
+                rx={46}
+                ry={36}
+                fill="#22c55e"
+                opacity={0.45}
+              />
+              <rect
+                x={toSvg(-180, 686).x - 8}
+                y={toSvg(-180, 686).y}
+                width={16}
+                height={toSvg(-180, 822).y - toSvg(-180, 686).y}
+                fill="#1e293b"
+                stroke="#38bdf8"
+                strokeWidth={1.5}
+              />
+
+              {/* Mainland World Border Perimeter */}
+              <rect
+                x={toSvg(-532, -532).x}
+                y={toSvg(-532, -532).y}
+                width={toSvg(532, 532).x - toSvg(-532, -532).x}
+                height={toSvg(532, 532).y - toSvg(-532, -532).y}
+                fill="none"
+                stroke="#f87171"
+                strokeWidth={2}
+                strokeDasharray="8 6"
+                opacity={0.85}
+              />
 
               {/* Airport Runway */}
               <rect
                 x={toSvg(235, -330).x}
                 y={toSvg(235, -330).y}
-                width={175}
-                height={28}
+                width={130}
+                height={22}
                 fill="#1e293b"
                 stroke="#e2e8f0"
                 strokeDasharray="6 4"

@@ -17,11 +17,16 @@ export class WeatherAndTimeSystem {
   private rainCount: number;
   private rainOffsets: Array<{ x: number; y: number; z: number; speed: number }> = [];
   private _dummy = new THREE.Object3D();
+  private _daySky = new THREE.Color();
+  private _sunsetSky = new THREE.Color(0xd97757);
+  private _nightSky = new THREE.Color(0x091124);
+  private _sunDayColor = new THREE.Color(0xfff5e4);
+  private _sunSunsetColor = new THREE.Color(0xff9e64);
   private isSoftwareGl: boolean;
 
   constructor(scene: THREE.Scene, isSoftwareGl: boolean, isMobile = false) {
     this.isSoftwareGl = isSoftwareGl;
-    this.rainCount = isMobile ? 150 : 360;
+    this.rainCount = isMobile ? 160 : 320;
 
     this.hemiLight = new THREE.HemisphereLight(0x93c5fd, 0x334155, 0.78);
     scene.add(this.hemiLight);
@@ -32,7 +37,7 @@ export class WeatherAndTimeSystem {
       this.sunLight.castShadow = true;
       const mapSize = isMobile ? 1024 : 2048;
       this.sunLight.shadow.mapSize.set(mapSize, mapSize);
-      const d = isMobile ? 75 : 125;
+      const d = isMobile ? 95 : 125;
       this.sunLight.shadow.camera.left = -d;
       this.sunLight.shadow.camera.right = d;
       this.sunLight.shadow.camera.top = d;
@@ -126,14 +131,12 @@ export class WeatherAndTimeSystem {
     const daylight = THREE.MathUtils.clamp((sunY + 0.15) / 0.55, 0, 1);
     const sunsetFactor = THREE.MathUtils.clamp(1 - Math.abs(sunY) * 4.2, 0, 1) * (daylight > 0 ? 1 : 0.35);
 
-    // Sky & Fog colors
-    const daySky = new THREE.Color(
+    // Sky & Fog colors (zero per-frame allocations)
+    this._daySky.setHex(
       this.weather === 'rain' ? 0x475569 : this.weather === 'cloudy' ? 0x64748b : this.weather === 'fog' ? 0x94a3b8 : 0x6cb4e8
     );
-    const sunsetSky = new THREE.Color(0xd97757);
-    const nightSky = new THREE.Color(0x091124);
 
-    this.skyColor.copy(nightSky).lerp(daySky, daylight).lerp(sunsetSky, sunsetFactor * 0.65);
+    this.skyColor.copy(this._nightSky).lerp(this._daySky, daylight).lerp(this._sunsetSky, sunsetFactor * 0.65);
     this.fog.color.copy(this.skyColor);
 
     const baseFog =
@@ -145,8 +148,8 @@ export class WeatherAndTimeSystem {
     this.sunLight.intensity = (0.35 + daylight * 2.1) * weatherDim;
     this.sunLight.color
       .setHex(0x93c5fd) // moonlight cool
-      .lerp(new THREE.Color(0xfff5e4), daylight)
-      .lerp(new THREE.Color(0xff9e64), sunsetFactor * 0.65);
+      .lerp(this._sunDayColor, daylight)
+      .lerp(this._sunSunsetColor, sunsetFactor * 0.65);
 
     this.hemiLight.intensity = (0.28 + daylight * 0.6) * weatherDim;
     this.hemiLight.color.copy(this.skyColor);

@@ -63,6 +63,7 @@ export default function App() {
           onAdvanceTime={() => engineRef.current?.advanceTimePreset()}
           onToggleMute={() => engineRef.current?.toggleMute()}
           onCycleWeapon={() => engineRef.current?.cycleWeapon()}
+          onToggleCamera={() => engineRef.current?.toggleFirstPerson()}
         />
       )}
 
@@ -70,6 +71,7 @@ export default function App() {
         <MobileControls
           language={hud.language}
           inVehicle={hud.inVehicle}
+          isAirplane={hud.isAirplane}
           isSwimming={hud.isSwimming}
           nearPedestrian={hud.nearPedestrian}
           hasInteractionPrompt={Boolean(hud.interactionPrompt)}
@@ -105,6 +107,9 @@ export default function App() {
           onAdvanceTime={() => engineRef.current?.advanceTimePreset()}
           onSetQualityMode={(mode) => engineRef.current?.setQualityMode(mode)}
           onSetLanguage={(lang) => engineRef.current?.setLanguage(lang)}
+          onRedeemCode={(code) =>
+            engineRef.current?.redeemSecretCode(code) ?? { ok: false, message: 'Game loading...' }
+          }
         />
       )}
 
@@ -120,6 +125,7 @@ export default function App() {
         <PhoneModal
           hud={hud}
           onSummonVehicle={(classId) => engineRef.current?.summonOwnedVehicle(classId)}
+          onTeleportToHouse={(houseId) => engineRef.current?.teleportToHouse(houseId)}
           onSetGpsTarget={(pt) => engineRef.current?.setCustomWaypoint(pt)}
           onClose={() => engineRef.current?.setPhase('playing')}
         />

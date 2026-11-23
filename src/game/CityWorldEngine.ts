@@ -7,6 +7,7 @@ import { WeaponSystem } from './combat/weaponSystem';
 import { WeatherAndTimeSystem } from './environment/weatherAndTime';
 import { MISSION_REGISTRY, MissionSystem } from './missions/missionSystem';
 import { ThirdPersonCameraController } from './player/cameraController';
+import { FirstPersonViewmodel } from './player/firstPersonRig';
 import { PlayerController } from './player/playerController';
 import { PoliceUnit, WantedSystem } from './police/wantedSystem';
 import {
@@ -21,20 +22,21 @@ import {
   VehicleClassId,
   WeaponId,
 } from './types';
-import { PLAYER_SKINS } from './player/skinCatalog';
+import { PLAYER_SKIN_LIST, PLAYER_SKINS } from './player/skinCatalog';
 import { VEHICLE_CATALOG } from './vehicles/vehicleCatalog';
 import { ExplosionSystem } from './vehicles/explosionSystem';
 import {
   applyBulletImpactToVehicleRig,
   CollidableVehicle,
   findSafeVehicleSpawnNearPlayer,
+  isAirplaneClass,
   isBicycleClass,
   resolveVehiclePairCollision,
   VehicleManager,
   WorldVehicle,
 } from './vehicles/vehiclePhysics';
 import { computeRoadGpsPath, GpsPathRenderer } from './world/gpsNavigation';
-import { buildInteriors } from './world/interiors';
+import { buildInteriors, InteriorsHandle } from './world/interiors';
 import { createProceduralTextures, ProceduralTextureSet } from './world/textures';
 import { buildCityWorld, WorldBuildResult } from './world/worldBuilder';
 import { getDistrictAt, groundHeightAt, INTERIOR_PORTALS } from './world/worldLayout';
@@ -51,14 +53,15 @@ export class CityWorldEngine {
   private qualityMode: QualityMode = 'medium';
   private language: Language = 'en';
   private shadowFrameCounter = 0;
-  private streamRadius = 560;
+  private streamRadius = 640;
   private pedCullDist = 200;
   private trafficCullDist = 300;
 
   private textures: ProceduralTextureSet;
   private world: WorldBuildResult;
-  private disposeInteriors: () => void;
+  private interiors: InteriorsHandle;
   private player: PlayerController;
+  private fpRig: FirstPersonViewmodel;
   private cameraCtrl: ThirdPersonCameraController;
   private vehicleMgr: VehicleManager;
   private explosions: ExplosionSystem;
@@ -86,6 +89,8 @@ export class CityWorldEngine {
   private gpsLastTargetKey = '';
   private missionBanner: HudSnapshot['missionBanner'] = null;
   private bannerTimer = 0;
+  private worldBorderNoticeTimer = 0;
+  private devCodeActivated = false;
 
   // Input state: held vs justPressed + Mobile virtual input
   private held = new Set<string>();
@@ -99,6 +104,7 @@ export class CityWorldEngine {
     throttle: 0,
     steer: 0,
     handbrake: false,
+    climb: 0,
   };
   private isDraggingCamera = false;
   private downPointerX = 0;
@@ -117,9 +123,12 @@ export class CityWorldEngine {
   private clock = new THREE.Clock();
   private simTime = 0;
   private hudAccum = 0;
+  private streamAccum = 0;
   private fpsAccum = 0;
   private fpsFrames = 0;
   private currentFps = 60;
+  private envTexture: THREE.Texture | null = null;
+  private readonly emptyRocketTargets: Array<{ x: number; y: number; z: number; radius: number }> = [];
 
   constructor(container: HTMLElement, onHudUpdate: (hud: HudSnapshot) => void) {
     this.container = container;
@@ -143,36 +152,32 @@ export class CityWorldEngine {
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
 
-    // 2. Renderer setup (Mobile-optimized pixel ratio & shadow sampling)
+    // 2. Renderer setup (Full visual fidelity preserved: highp shaders, antialiasing, crisp resolution, soft shadows)
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl && !this.isMobile,
+      antialias: !this.isSoftwareGl,
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
-    this.renderer.setPixelRatio(this.isSoftwareGl || this.isMobile ? 1 : Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.35));
     this.renderer.shadowMap.enabled = !this.isSoftwareGl;
-    this.renderer.shadowMap.type = this.isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = !this.isMobile;
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     container.appendChild(this.renderer.domElement);
 
-    // 3. Scene, Camera & Studio Environment IBL
+    // 3. Scene & Camera
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(
       60,
       (container.clientWidth || window.innerWidth) / (container.clientHeight || window.innerHeight),
-      0.2,
-      this.isMobile ? 820 : 1150
+      0.25,
+      1150
     );
 
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    pmrem.dispose();
-
-    this.qualityMode = this.isMobile ? 'low' : 'high';
+    this.qualityMode = this.isMobile ? 'medium' : 'high';
     const savedLang = typeof window !== 'undefined' ? window.localStorage.getItem('cityworld_lang') : null;
     if (savedLang === 'ar' || savedLang === 'en') {
       this.language = savedLang;
@@ -183,9 +188,12 @@ export class CityWorldEngine {
     this.weatherTime = new WeatherAndTimeSystem(this.scene, this.isSoftwareGl, this.isMobile);
     this.textures = createProceduralTextures(this.renderer);
     this.world = buildCityWorld(this.scene, this.textures, this.isMobile);
-    this.disposeInteriors = buildInteriors(this.scene);
+    this.interiors = buildInteriors(this.scene);
 
     this.player = new PlayerController(this.scene);
+    this.fpRig = new FirstPersonViewmodel();
+    this.scene.add(this.camera);
+    this.camera.add(this.fpRig.root);
     this.cameraCtrl = new ThirdPersonCameraController();
     this.vehicleMgr = new VehicleManager(this.scene);
     this.vehicleMgr.spawnInitialFleet();
@@ -261,6 +269,13 @@ export class CityWorldEngine {
   };
 
   private handleKeyDown = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+      if (e.code === 'Escape') {
+        target.blur();
+      }
+      return;
+    }
     if (e.repeat) return;
     this.sound.init();
     if (e.code === 'Tab') e.preventDefault();
@@ -403,6 +418,35 @@ export class CityWorldEngine {
     this.pushHud();
   }
 
+  public toggleFirstPerson(): void {
+    this.sound.init();
+    const fp = this.cameraCtrl.toggleFirstPerson(this.activeVehicle?.heading ?? this.player.heading);
+    if (!fp && this.activeVehicle) {
+      this.activeVehicle.rig.cabinGroup.visible = true;
+    }
+    this.missionBanner = {
+      title:
+        this.language === 'ar'
+          ? fp
+            ? 'منظور الشخص الأول'
+            : 'منظور الشخص الثالث'
+          : fp
+            ? 'First-Person View'
+            : 'Third-Person View',
+      subtitle:
+        this.language === 'ar'
+          ? fp
+            ? 'اضغط C أو زر الكاميرا للتبديل'
+            : 'تمت العودة للمنظور الخارجي'
+          : fp
+            ? 'Press C or Camera icon anytime to toggle'
+            : 'Switched back to chase camera',
+      kind: 'info',
+    };
+    this.bannerTimer = 2.0;
+    this.pushHud();
+  }
+
   public setLanguage(lang: Language): void {
     this.language = lang;
     try {
@@ -424,67 +468,82 @@ export class CityWorldEngine {
     let targetPr = 1.0;
     let shadowsOn = false;
     let shadowAuto = false;
-    let farPlane = 680;
-    let trafficCount = 24;
-    let pedCount = 24;
+    let farPlane = 950;
+    let trafficCount = 28;
+    let pedCount = 28;
+    let useEnvIbl = true;
 
     switch (this.qualityMode) {
       case 'very_low':
-        targetPr = 0.75;
+        targetPr = Math.min(dpr, 0.9);
         shadowsOn = false;
-        farPlane = 420;
-        this.streamRadius = 360;
-        this.trafficCullDist = 190;
-        this.pedCullDist = 130;
-        trafficCount = 12;
-        pedCount = 12;
+        useEnvIbl = false;
+        farPlane = 600;
+        this.streamRadius = 480;
+        this.trafficCullDist = 200;
+        this.pedCullDist = 140;
+        trafficCount = 16;
+        pedCount = 14;
         break;
       case 'low':
-        targetPr = 0.9;
-        shadowsOn = false;
-        farPlane = 540;
-        this.streamRadius = 450;
-        this.trafficCullDist = 240;
-        this.pedCullDist = 165;
-        trafficCount = 18;
-        pedCount = 18;
+        targetPr = Math.min(dpr, 1.15);
+        shadowsOn = !this.isSoftwareGl;
+        shadowAuto = false;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        farPlane = 780;
+        this.streamRadius = 560;
+        this.trafficCullDist = 250;
+        this.pedCullDist = 175;
+        trafficCount = 22;
+        pedCount = 20;
         break;
       case 'medium':
-        targetPr = Math.min(dpr, 1.1);
+        targetPr = Math.min(dpr, 1.35);
         shadowsOn = !this.isSoftwareGl;
-        shadowAuto = false; // updated every 2nd frame
-        this.renderer.shadowMap.type = THREE.PCFShadowMap;
-        farPlane = 720;
-        this.streamRadius = 560;
-        this.trafficCullDist = 290;
+        shadowAuto = false;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        farPlane = 950;
+        this.streamRadius = 640;
+        this.trafficCullDist = 300;
         this.pedCullDist = 200;
-        trafficCount = 24;
-        pedCount = 26;
+        trafficCount = 28;
+        pedCount = 28;
         break;
       case 'high':
-        targetPr = Math.min(dpr, 1.5);
+        targetPr = Math.min(dpr, 1.75);
         shadowsOn = !this.isSoftwareGl;
         shadowAuto = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        farPlane = 950;
-        this.streamRadius = 720;
-        this.trafficCullDist = 350;
-        this.pedCullDist = 245;
-        trafficCount = 30;
-        pedCount = 34;
+        farPlane = 1150;
+        this.streamRadius = 760;
+        this.trafficCullDist = 360;
+        this.pedCullDist = 250;
+        trafficCount = 34;
+        pedCount = 36;
         break;
       case 'ultra':
         targetPr = Math.min(dpr, 2.0);
         shadowsOn = !this.isSoftwareGl;
         shadowAuto = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        farPlane = 1250;
+        farPlane = 1350;
         this.streamRadius = 920;
         this.trafficCullDist = 420;
         this.pedCullDist = 290;
         trafficCount = 36;
         pedCount = 42;
         break;
+    }
+
+    if (useEnvIbl && !this.isSoftwareGl) {
+      if (!this.envTexture) {
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        this.envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        pmrem.dispose();
+      }
+      this.scene.environment = this.envTexture;
+    } else {
+      this.scene.environment = null;
     }
 
     this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : targetPr);
@@ -557,6 +616,7 @@ export class CityWorldEngine {
   public equipSkin(skinId: PlayerSkinId): void {
     if (!this.ownedSkins.has(skinId)) return;
     this.player.applySkin(skinId);
+    this.fpRig.syncSkin(skinId);
     this.sound.playMissionCue('step');
     const skin = PLAYER_SKINS[skinId];
     this.missionBanner = {
@@ -578,8 +638,9 @@ export class CityWorldEngine {
 
     if (this.activeVehicle) {
       this.activeVehicle.occupiedByPlayer = false;
+      this.activeVehicle.rig.cabinGroup.visible = true;
       this.player.setRidingPose('none', 0, 0);
-      this.player.root.visible = true;
+      this.player.root.visible = !this.cameraCtrl.firstPerson;
       this.activeVehicle = null;
     }
 
@@ -616,6 +677,102 @@ export class CityWorldEngine {
         this.language === 'ar'
           ? 'تم إحضار سيارتك في مكان آمن قريب منك!'
           : 'Your vehicle has been safely delivered nearby!',
+      kind: 'success',
+    };
+    this.bannerTimer = 3.5;
+    this.pushHud();
+  }
+
+  public redeemSecretCode(rawCode: string): { ok: boolean; message: string } {
+    const code = rawCode.trim();
+    if (code !== 'MUHAMMD8') {
+      return {
+        ok: false,
+        message: this.language === 'ar' ? 'الكود غير صحيح! جرب الكود المخصص.' : 'Invalid code! Access denied.',
+      };
+    }
+
+    this.sound.init();
+    this.devCodeActivated = true;
+    this.money = Math.max(this.money, 1_000_000);
+    this.player.health = this.player.maxHealth;
+    this.player.armor = this.player.maxArmor;
+    this.player.stamina = this.player.maxStamina;
+
+    (['pistol', 'smg', 'shotgun', 'rifle', 'rpg'] as WeaponId[]).forEach((w) => {
+      this.weapons.ownedWeapons.add(w);
+      this.weapons.ammoByWeapon[w] = w === 'rpg' ? 99 : 999;
+    });
+    this.weapons.ownedWeapons.add('fists');
+
+    PLAYER_SKIN_LIST.forEach((s) => this.ownedSkins.add(s.id));
+    INTERIOR_PORTALS.filter((p) => p.kind === 'house').forEach((p) => this.ownedHouses.add(p.id));
+    (Object.keys(VEHICLE_CATALOG) as VehicleClassId[]).forEach((v) => this.ownedVehicles.add(v));
+
+    this.sound.playMissionCue('success');
+    this.missionBanner = {
+      title: this.language === 'ar' ? 'تم تفعيل كود المطورين MUHAMMD8!' : 'Developer Code MUHAMMD8 Activated!',
+      subtitle:
+        this.language === 'ar'
+          ? 'تم منحك $1,000,000 وفتح جميع السيارات والطائرات والأسلحة والسكنات والبيوت!'
+          : '$1,000,000 added & all vehicles, weapons, skins, and houses unlocked!',
+      kind: 'success',
+    };
+    this.bannerTimer = 5.0;
+    this.pushHud();
+
+    return {
+      ok: true,
+      message:
+        this.language === 'ar'
+          ? 'تم التفعيل بنجاح! لديك الآن $1,000,000 وكل شيء مفتوح في الهاتف والحقيبة.'
+          : 'Unlocked! $1,000,000 & all vehicles, skins, weapons, and houses are yours.',
+    };
+  }
+
+  public teleportToHouse(houseId: string): void {
+    if (!this.ownedHouses.has(houseId)) return;
+    const portal = INTERIOR_PORTALS.find((p) => p.id === houseId && p.kind === 'house');
+    if (!portal) return;
+
+    this.sound.init();
+    if (this.player.inInterior && this.activeInterior) {
+      this.exitInterior();
+    }
+    if (this.activeVehicle) {
+      this.activeVehicle.occupiedByPlayer = false;
+      this.activeVehicle.rig.cabinGroup.visible = true;
+      this.activeVehicle = null;
+    }
+
+    this.player.inInterior = false;
+    this.player.setRidingPose('none', 0, 0);
+    this.player.root.visible = !this.cameraCtrl.firstPerson;
+    this.player.x = portal.exteriorPos.x;
+    this.player.z = portal.exteriorPos.z + 2.8;
+    this.player.y = groundHeightAt(this.player.x, this.player.z);
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.vz = 0;
+    this.player.heading = Math.PI;
+    this.cameraCtrl.yaw = this.cameraCtrl.firstPerson ? 0 : 0;
+
+    if (
+      this.customWaypoint &&
+      Math.hypot(this.customWaypoint.x - portal.exteriorPos.x, this.customWaypoint.z - portal.exteriorPos.z) < 20
+    ) {
+      this.customWaypoint = null;
+    }
+
+    this.phase = 'playing';
+    this.sound.playMissionCue('step');
+    const hName = this.language === 'ar' ? portal.nameAr : portal.name;
+    this.missionBanner = {
+      title: hName,
+      subtitle:
+        this.language === 'ar'
+          ? 'تم الانتقال الفوري إلى منزلك! اضغط E للدخول.'
+          : 'Teleported to your home! Press E to step inside.',
       kind: 'success',
     };
     this.bannerTimer = 3.5;
@@ -683,6 +840,7 @@ export class CityWorldEngine {
       const skinId = actionId.replace('buy_skin_', '') as PlayerSkinId;
       if (this.ownedSkins.has(skinId)) {
         this.player.applySkin(skinId);
+        this.fpRig.syncSkin(skinId);
         this.sound.playMissionCue('step');
         this.missionBanner = {
           title: this.language === 'ar' ? action.labelAr : action.label,
@@ -771,6 +929,7 @@ export class CityWorldEngine {
       const skinId = actionId.replace('buy_skin_', '') as PlayerSkinId;
       this.ownedSkins.add(skinId);
       this.player.applySkin(skinId);
+      this.fpRig.syncSkin(skinId);
     } else if (actionId === 'collect_dividend') {
       this.money += 350;
     } else if (actionId === 'clear_wanted') {
@@ -798,6 +957,7 @@ export class CityWorldEngine {
         buy_car_hyper_viper: 'hyper_viper',
         buy_car_track_phantom: 'track_phantom',
         buy_car_nova_x: 'nova_x',
+        buy_car_airplane: 'airplane',
       };
       const cls = clsMap[actionId] ?? 'sports';
       this.ownedVehicles.add(cls);
@@ -863,6 +1023,7 @@ export class CityWorldEngine {
     this.player.y = ext.y;
     this.player.z = ext.z + exitOffsetZ;
     this.activeInterior = null;
+    this.interiors.setActiveInterior(null);
     this.phase = 'playing';
     this.sound.playDoorLatch();
     this.pushHud();
@@ -874,9 +1035,11 @@ export class CityWorldEngine {
     this.wanted.clearWanted();
     if (this.activeVehicle) {
       this.activeVehicle.occupiedByPlayer = false;
+      this.activeVehicle.rig.cabinGroup.visible = true;
     }
     this.activeVehicle = null;
     this.activeInterior = null;
+    this.interiors.setActiveInterior(null);
     this.firingActive = false;
     this.phase = 'playing';
     this.missionBanner = {
@@ -1135,8 +1298,16 @@ export class CityWorldEngine {
       const dz = portal.exteriorPos.z - this.player.z;
       if (dx * dx + dz * dz < 14) {
         const pName = this.language === 'ar' ? portal.nameAr : portal.name;
+        const isLockedHouse = portal.kind === 'house' && !this.ownedHouses.has(portal.id);
+        const hPrice = portal.housePrice ?? 5500;
         return {
-          prompt: this.language === 'ar' ? `[E] دخول ${pName}` : `[E] Enter ${pName}`,
+          prompt: isLockedHouse
+            ? this.language === 'ar'
+              ? `[E] شراء ${pName} للدخول ($${hPrice.toLocaleString()})`
+              : `[E] Buy ${pName} to Enter ($${hPrice.toLocaleString()})`
+            : this.language === 'ar'
+              ? `[E] دخول ${pName}`
+              : `[E] Enter ${pName}`,
           nearVehicle: null,
           nearTrafficAgent: null,
           nearPoliceUnit: null,
@@ -1173,7 +1344,25 @@ export class CityWorldEngine {
     }
   }
 
+  private notifyWorldBorder(inAirplane = false): void {
+    if (this.worldBorderNoticeTimer > 0) return;
+    this.worldBorderNoticeTimer = 3.6;
+    this.missionBanner = {
+      title: this.language === 'ar' ? 'حدود العالم' : 'World Border Reached',
+      subtitle: inAirplane
+        ? this.language === 'ar'
+          ? 'وصلت إلى نهاية المجال الجوي! اتجه نحو الجزيرة أو المطار.'
+          : 'Outer airspace boundary reached! Head back toward the Island or Airport.'
+        : this.language === 'ar'
+          ? 'لا يمكنك مغادرة الحدود سيراً أو بالسيارة! اذهب إلى المطار واركب طائرة للسفر إلى الجزيرة.'
+          : 'Border locked on land/sea! Fly an Airplane from the Airport to cross to the Island.',
+      kind: 'info',
+    };
+    this.bannerTimer = 3.5;
+  }
+
   private handleVehicleDestroyed(v: WorldVehicle, occupied: boolean): void {
+    v.rig.cabinGroup.visible = true;
     if (isBicycleClass(v.classId)) {
       this.explosions.triggerDustBurst(v.x, v.y, v.z);
       this.sound.playImpact(0.75);
@@ -1184,7 +1373,7 @@ export class CityWorldEngine {
         this.player.x = v.x + Math.cos(v.heading) * 1.4;
         this.player.z = v.z - Math.sin(v.heading) * 1.4;
         this.player.y = groundHeightAt(this.player.x, this.player.z);
-        this.player.root.visible = true;
+        this.player.root.visible = !this.cameraCtrl.firstPerson;
         this.player.applyDamage(18);
         this.missionBanner = {
           title: this.language === 'ar' ? 'تحطم البسكليت!' : 'Bicycle Wrecked!',
@@ -1264,6 +1453,7 @@ export class CityWorldEngine {
     }
 
     this.player.triggerPunchPose(aimHeading);
+    this.fpRig.triggerPunch();
     this.sound.playPunch();
 
     if (nearPed) {
@@ -1396,6 +1586,7 @@ export class CityWorldEngine {
 
     if (fired) {
       this.player.triggerAimPose(aimHeading);
+      this.fpRig.triggerFire(this.weapons.currentWeapon);
       const shake =
         this.weapons.currentWeapon === 'rpg'
           ? 0.42
@@ -1424,6 +1615,9 @@ export class CityWorldEngine {
     if (this.justPressed.has('KeyN')) {
       this.toggleMute();
     }
+    if (this.justPressed.has('KeyC') && this.phase === 'playing') {
+      this.toggleFirstPerson();
+    }
 
     if (this.phase !== 'playing') {
       this.justPressed.clear();
@@ -1450,6 +1644,7 @@ export class CityWorldEngine {
     if (this.justPressed.has('KeyF') && !this.player.inInterior) {
       if (this.activeVehicle) {
         this.activeVehicle.occupiedByPlayer = false;
+        this.activeVehicle.rig.cabinGroup.visible = true;
         const exitSideX = Math.cos(this.activeVehicle.heading) * (this.activeVehicle.rig.spec.width * 0.8 + 0.7);
         const exitSideZ = -Math.sin(this.activeVehicle.heading) * (this.activeVehicle.rig.spec.width * 0.8 + 0.7);
         this.player.x = this.activeVehicle.x + exitSideX;
@@ -1458,7 +1653,7 @@ export class CityWorldEngine {
         this.player.vx = 0;
         this.player.vz = 0;
         this.player.setRidingPose('none', 0, 0);
-        this.player.root.visible = true;
+        this.player.root.visible = !this.cameraCtrl.firstPerson;
         this.activeVehicle = null;
         this.sound.playDoorLatch();
       } else {
@@ -1468,7 +1663,7 @@ export class CityWorldEngine {
           this.activeVehicle.occupiedByPlayer = true;
           const isOpenBike =
             this.activeVehicle.classId === 'motorcycle' || isBicycleClass(this.activeVehicle.classId);
-          this.player.root.visible = isOpenBike;
+          this.player.root.visible = isOpenBike && !this.cameraCtrl.firstPerson;
           this.sound.playDoorLatch();
           if (this.activeVehicle.classId === 'police') {
             this.wanted.setMinimumStars(1);
@@ -1501,7 +1696,7 @@ export class CityWorldEngine {
           this.activeVehicle.occupiedByPlayer = true;
           const isOpenBike =
             hijacked.classId === 'motorcycle' || isBicycleClass(hijacked.classId);
-          this.player.root.visible = isOpenBike;
+          this.player.root.visible = isOpenBike && !this.cameraCtrl.firstPerson;
           this.sound.playDoorLatch();
           this.pedestrians.triggerPanicNear(snap.x, snap.z, 22);
           this.wanted.setMinimumStars(1);
@@ -1542,17 +1737,47 @@ export class CityWorldEngine {
       if (ctx.nearMissionId) {
         this.startMissionById(ctx.nearMissionId);
       } else if (ctx.nearPortal) {
-        this.activeInterior = ctx.nearPortal;
-        this.player.inInterior = true;
-        this.player.interiorFloorY = ctx.nearPortal.interiorCenter.y;
-        const isHouse = ctx.nearPortal.kind === 'house';
-        const tier = ctx.nearPortal.houseSizeTier ?? 1;
-        this.player.interiorHalfW = isHouse ? (tier === 1 ? 8 : tier === 2 ? 10 : tier === 3 ? 13 : 16) : 11;
-        this.player.interiorHalfD = isHouse ? (tier === 1 ? 8 : tier === 2 ? 10 : tier === 3 ? 12 : 14) : 11;
-        this.player.x = ctx.nearPortal.interiorCenter.x;
-        this.player.y = ctx.nearPortal.interiorCenter.y;
-        this.player.z = ctx.nearPortal.interiorCenter.z + (this.player.interiorHalfD - 3);
-        this.sound.playDoorLatch();
+        if (ctx.nearPortal.kind === 'house' && !this.ownedHouses.has(ctx.nearPortal.id)) {
+          const hPrice = ctx.nearPortal.housePrice ?? 5500;
+          const hName = this.language === 'ar' ? ctx.nearPortal.nameAr : ctx.nearPortal.name;
+          if (this.money >= hPrice) {
+            this.money -= hPrice;
+            this.ownedHouses.add(ctx.nearPortal.id);
+            this.sound.playMissionCue('step');
+            this.missionBanner = {
+              title: this.language === 'ar' ? `تم شراء ${hName}!` : `Purchased ${hName}!`,
+              subtitle:
+                this.language === 'ar'
+                  ? 'أصبح البيت ملكك الآن. اضغط E للدخول وتناول الطعام والنوم.'
+                  : 'You now own this home! Press E again to enter.',
+              kind: 'success',
+            };
+            this.bannerTimer = 3.8;
+          } else {
+            this.missionBanner = {
+              title: this.language === 'ar' ? 'المنزل مقفل!' : 'House Locked!',
+              subtitle:
+                this.language === 'ar'
+                  ? `يجب شراء ${hName} أولاً ($${hPrice.toLocaleString()}) قبل الدخول.`
+                  : `You must buy ${hName} ($${hPrice.toLocaleString()}) before entering.`,
+              kind: 'fail',
+            };
+            this.bannerTimer = 3.5;
+          }
+        } else {
+          this.activeInterior = ctx.nearPortal;
+          this.interiors.setActiveInterior(ctx.nearPortal.id);
+          this.player.inInterior = true;
+          this.player.interiorFloorY = ctx.nearPortal.interiorCenter.y;
+          const isHouse = ctx.nearPortal.kind === 'house';
+          const tier = ctx.nearPortal.houseSizeTier ?? 1;
+          this.player.interiorHalfW = isHouse ? (tier === 1 ? 8 : tier === 2 ? 10 : tier === 3 ? 13 : 16) : 11;
+          this.player.interiorHalfD = isHouse ? (tier === 1 ? 8 : tier === 2 ? 10 : tier === 3 ? 12 : 14) : 11;
+          this.player.x = ctx.nearPortal.interiorCenter.x;
+          this.player.y = ctx.nearPortal.interiorCenter.y;
+          this.player.z = ctx.nearPortal.interiorCenter.z + (this.player.interiorHalfD - 3);
+          this.sound.playDoorLatch();
+        }
       } else if (ctx.nearHouseFood) {
         this.executeInteriorAction('house_eat');
       } else if (ctx.nearHouseBed) {
@@ -1589,10 +1814,12 @@ export class CityWorldEngine {
       this.weatherTime.update(dt * 0.25, 0, 0, false);
       this.world.updateLightsAndWater(this.simTime, this.weatherTime.isNight(), this.weatherTime.weather === 'rain', this.simTime);
       this.world.updateStreaming(0, 0, this.streamRadius);
+      this.fpRig.root.visible = false;
       this.traffic.update(dt, this.simTime, this.weatherTime.isNight(), 0, 0, false, this.trafficCullDist, () => {});
       this.cameraCtrl.updateTitleOrbit(this.camera, this.simTime);
     } else if (this.phase === 'playing') {
       this.manualOrbitTimer = Math.max(0, this.manualOrbitTimer - dt);
+      if (this.worldBorderNoticeTimer > 0) this.worldBorderNoticeTimer = Math.max(0, this.worldBorderNoticeTimer - dt);
       if (this.bannerTimer > 0) {
         this.bannerTimer -= dt;
         if (this.bannerTimer <= 0) this.missionBanner = null;
@@ -1601,7 +1828,11 @@ export class CityWorldEngine {
       // Sync held weapon mesh visibility
       this.player.setHeldWeaponVisual(
         this.weapons.currentWeapon,
-        !this.activeVehicle && !this.player.isSwimming && !this.player.inInterior && this.weapons.currentWeapon !== 'fists'
+        !this.activeVehicle &&
+          !this.player.isSwimming &&
+          !this.player.inInterior &&
+          !this.cameraCtrl.firstPerson &&
+          this.weapons.currentWeapon !== 'fists'
       );
 
       // Continuous firing (hold Fire button on mobile or hold G on desktop)
@@ -1620,11 +1851,16 @@ export class CityWorldEngine {
         const throttle = Math.abs(kbThrottle) > 0 ? kbThrottle : this.virtualInput.throttle;
         const steer = Math.abs(kbSteer) > 0 ? kbSteer : this.virtualInput.steer;
         const handbrake = this.held.has('Space') || this.virtualInput.handbrake;
+        const kbClimb =
+          (this.held.has('Space') ? 1 : 0) -
+          (this.held.has('ShiftLeft') || this.held.has('ShiftRight') || this.held.has('KeyX') ? 1 : 0);
+        const climb = kbClimb !== 0 ? kbClimb : this.virtualInput.climb;
 
+        const activeIsPlane = isAirplaneClass(this.activeVehicle.classId);
         this.vehicleMgr.update(
           dt,
           this.activeVehicle,
-          { throttle, steer, handbrake },
+          { throttle, steer, handbrake, climb },
           this.world.colliders,
           this.weatherTime.weather,
           this.weatherTime.isNight(),
@@ -1637,7 +1873,10 @@ export class CityWorldEngine {
           },
           (v) => {
             this.handleVehicleDestroyed(v, v === this.activeVehicle);
-          }
+          },
+          () => this.notifyWorldBorder(activeIsPlane),
+          this.player.x,
+          this.player.z
         );
 
         if (this.activeVehicle) {
@@ -1648,7 +1887,8 @@ export class CityWorldEngine {
 
           const isBike = isBicycleClass(this.activeVehicle.classId);
           const isOpenRider = isBike || this.activeVehicle.classId === 'motorcycle';
-          this.player.root.visible = isOpenRider;
+          this.activeVehicle.rig.cabinGroup.visible = !(this.cameraCtrl.firstPerson && !isOpenRider);
+          this.player.root.visible = isOpenRider && !this.cameraCtrl.firstPerson;
           if (isOpenRider) {
             this.player.root.position.set(this.activeVehicle.x, this.activeVehicle.y, this.activeVehicle.z);
             this.player.root.rotation.y = this.activeVehicle.heading;
@@ -1664,15 +1904,19 @@ export class CityWorldEngine {
         }
       } else {
         this.player.setRidingPose('none', 0, 0);
+        this.player.root.visible = !this.cameraCtrl.firstPerson;
         this.vehicleMgr.update(
           dt,
           null,
-          { throttle: 0, steer: 0, handbrake: false },
+          { throttle: 0, steer: 0, handbrake: false, climb: 0 },
           this.world.colliders,
           this.weatherTime.weather,
           this.weatherTime.isNight(),
           () => {},
-          (v) => this.handleVehicleDestroyed(v, false)
+          (v) => this.handleVehicleDestroyed(v, false),
+          undefined,
+          this.player.x,
+          this.player.z
         );
 
         const kbMoveX =
@@ -1695,16 +1939,25 @@ export class CityWorldEngine {
           (dmg) => {
             this.sound.playImpact(dmg / 40);
             this.cameraCtrl.addShake(0.5);
-          }
+          },
+          () => this.notifyWorldBorder(false)
         );
       }
 
-      // 2. Camera Follow
+      // 2. Camera Follow + First-Person Viewmodel Sync
       const speedRatio = this.activeVehicle
         ? Math.min(1, Math.abs(this.activeVehicle.forwardSpeed) / this.activeVehicle.rig.spec.maxSpeed)
         : this.player.isSprinting
           ? 0.45
           : 0;
+
+      const fpVehicleType: 'none' | 'car' | 'bike' | 'airplane' = !this.activeVehicle
+        ? 'none'
+        : isAirplaneClass(this.activeVehicle.classId)
+          ? 'airplane'
+          : isBicycleClass(this.activeVehicle.classId) || this.activeVehicle.classId === 'motorcycle'
+            ? 'bike'
+            : 'car';
 
       this.cameraCtrl.updateFollow(
         this.camera,
@@ -1716,8 +1969,20 @@ export class CityWorldEngine {
         Boolean(this.activeVehicle),
         speedRatio,
         this.manualOrbitTimer <= 0,
-        this.player.inInterior
+        this.player.inInterior,
+        fpVehicleType
       );
+
+      this.fpRig.update(dt, {
+        active: this.cameraCtrl.firstPerson,
+        mode: fpVehicleType === 'none' ? 'on_foot' : fpVehicleType,
+        weaponId: this.player.inInterior ? 'fists' : this.weapons.currentWeapon,
+        steerAngle: this.activeVehicle?.steerAngle ?? 0,
+        speed: this.activeVehicle ? this.activeVehicle.forwardSpeed : Math.hypot(this.player.vx, this.player.vz),
+        isMoving: !this.activeVehicle && Math.hypot(this.player.vx, this.player.vz) > 0.4,
+        isSprinting: this.player.isSprinting,
+        isSwimming: this.player.isSwimming,
+      });
 
       // 3. World, Weather, Traffic, Pedestrians, Police, Weapons, Explosions, Missions
       const focusX = this.player.inInterior && this.activeInterior ? this.activeInterior.exteriorPos.x : this.player.x;
@@ -1730,18 +1995,24 @@ export class CityWorldEngine {
         this.weatherTime.weather === 'rain',
         this.simTime
       );
-      this.world.updateStreaming(focusX, focusZ, this.streamRadius);
+      this.streamAccum += dt;
+      if (this.streamAccum >= 0.25) {
+        this.streamAccum = 0;
+        this.world.updateStreaming(focusX, focusZ, this.streamRadius);
+      }
 
-      const rocketDynamicTargets = [
-        ...this.vehicleMgr.vehicles
-          .filter((v) => !v.exploded && v !== this.activeVehicle)
-          .map((v) => ({ x: v.x, y: v.y, z: v.z, radius: Math.max(1.8, v.rig.spec.width * 0.9) })),
-        ...this.traffic.agents
-          .filter((a) => !a.exploded && a.rig.root.visible)
-          .map((a) => ({ x: a.x, y: a.y, z: a.z, radius: 2.0 })),
-        ...this.wanted.getCombatTargets().map((t) => ({ x: t.x, y: t.y, z: t.z, radius: t.radius })),
-        ...this.pedestrians.getCombatTargets().map((t) => ({ x: t.x, y: t.y, z: t.z, radius: t.radius })),
-      ];
+      const rocketDynamicTargets = this.weapons.hasActiveRockets()
+        ? [
+            ...this.vehicleMgr.vehicles
+              .filter((v) => !v.exploded && v !== this.activeVehicle)
+              .map((v) => ({ x: v.x, y: v.y, z: v.z, radius: Math.max(1.8, v.rig.spec.width * 0.9) })),
+            ...this.traffic.agents
+              .filter((a) => !a.exploded && a.rig.root.visible)
+              .map((a) => ({ x: a.x, y: a.y, z: a.z, radius: 2.0 })),
+            ...this.wanted.getCombatTargets().map((t) => ({ x: t.x, y: t.y, z: t.z, radius: t.radius })),
+            ...this.pedestrians.getCombatTargets().map((t) => ({ x: t.x, y: t.y, z: t.z, radius: t.radius })),
+          ]
+        : this.emptyRocketTargets;
       this.weapons.update(
         dt,
         this.world.colliders,
@@ -1928,6 +2199,18 @@ export class CityWorldEngine {
               }
               this.cameraCtrl.addShake(0.18);
             }
+          },
+          () => {
+            this.sound.playMissionCue('success');
+            this.missionBanner = {
+              title: this.language === 'ar' ? 'تم الإفلات من الشرطة!' : 'Escaped the Police!',
+              subtitle:
+                this.language === 'ar'
+                  ? 'ابتعدت عن الشرطة لمدة 20 ثانية وتمت إزالة النجوم.'
+                  : 'Stayed clear for 20 seconds — Wanted Level cleared.',
+              kind: 'success',
+            };
+            this.bannerTimer = 3.8;
           }
         );
       }
@@ -2010,9 +2293,9 @@ export class CityWorldEngine {
 
     this.renderer.render(this.scene, this.camera);
 
-    // Push HUD snapshot at ~15Hz
+    // Push HUD snapshot at ~10.5Hz to minimize React re-render overhead
     this.hudAccum += rawDt;
-    if (this.hudAccum >= 0.065) {
+    if (this.hudAccum >= 0.095) {
       this.hudAccum = 0;
       this.pushHud();
     }
@@ -2198,6 +2481,12 @@ export class CityWorldEngine {
       timePhase: this.weatherTime.getTimePhase(),
       weather: this.weatherTime.weather,
       inVehicle: Boolean(this.activeVehicle),
+      isAirplane: Boolean(this.activeVehicle && isAirplaneClass(this.activeVehicle.classId)),
+      altitude:
+        this.activeVehicle && isAirplaneClass(this.activeVehicle.classId)
+          ? Math.max(0, Math.round(this.activeVehicle.y - Math.max(groundHeightAt(this.activeVehicle.x, this.activeVehicle.z), -0.35)))
+          : 0,
+      firstPerson: this.cameraCtrl.firstPerson,
       vehicleName: this.activeVehicle
         ? this.language === 'ar'
           ? this.activeVehicle.rig.spec.nameAr
@@ -2232,6 +2521,7 @@ export class CityWorldEngine {
       gpsTargetPos: this.gpsTargetPos,
       muted: this.sound.muted,
       fps: this.currentFps,
+      devUnlocked: this.devCodeActivated,
       completedMissionIds: Array.from(this.missions.completedIds),
     });
   }
@@ -2243,6 +2533,7 @@ export class CityWorldEngine {
     this.unbindEvents();
     this.sound.dispose();
     this.player.dispose();
+    this.fpRig.dispose();
     this.vehicleMgr.dispose();
     this.explosions.dispose();
     this.traffic.dispose();
@@ -2253,8 +2544,9 @@ export class CityWorldEngine {
     this.gpsRenderer.dispose();
     this.weatherTime.dispose();
     this.world.dispose();
-    this.disposeInteriors();
+    this.interiors.dispose();
     this.textures.dispose();
+    this.envTexture?.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentNode === this.container) {
       this.container.removeChild(this.renderer.domElement);

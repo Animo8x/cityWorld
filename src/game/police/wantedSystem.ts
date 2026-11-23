@@ -43,7 +43,7 @@ export class WantedSystem {
   public stars = 0;
   public heatScore = 0;
   public evadeTimer = 0;
-  public evadeDuration = 300; // 5 minutes (300 seconds) escape timer
+  public evadeDuration = 20; // 20 seconds escape timer when distanced from police
   public isSearching = false;
   public nearestPoliceDist = 9999;
 
@@ -341,7 +341,8 @@ export class WantedSystem {
       dy: number,
       dz: number,
       hitPlayer: boolean
-    ) => void
+    ) => void,
+    onWantedEvaded?: () => void
   ): void {
     this.strobeTimer += dt;
     this.nearestPoliceDist = 9999;
@@ -374,12 +375,12 @@ export class WantedSystem {
       const dist = Math.hypot(dx, dz);
       if (dist < this.nearestPoliceDist) this.nearestPoliceDist = dist;
 
-      const sightRange = 78 + this.stars * 16;
+      const sightRange = 70 + this.stars * 10;
       if (dist < sightRange) {
         anyUnitHasSight = true;
         u.lastKnownX = playerX;
         u.lastKnownZ = playerZ;
-      } else if (dist > 220) {
+      } else if (dist > 260 && !this.isSearching) {
         this.spawnUnitOutOfView(u, playerX, playerZ, camDirX, camDirZ);
       }
 
@@ -518,6 +519,7 @@ export class WantedSystem {
       this.evadeTimer += dt;
       if (this.evadeTimer >= this.evadeDuration) {
         this.clearWanted();
+        if (onWantedEvaded) onWantedEvaded();
       }
     }
   }

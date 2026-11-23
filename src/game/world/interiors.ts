@@ -2,8 +2,14 @@ import * as THREE from 'three';
 import { InteriorPortalDef } from '../types';
 import { INTERIOR_PORTALS } from './worldLayout';
 
-export function buildInteriors(scene: THREE.Scene): () => void {
+export interface InteriorsHandle {
+  setActiveInterior: (id: string | null) => void;
+  dispose: () => void;
+}
+
+export function buildInteriors(scene: THREE.Scene): InteriorsHandle {
   const disposables: Array<{ dispose: () => void }> = [];
+  const interiorGroups = new Map<string, THREE.Group>();
 
   INTERIOR_PORTALS.forEach((portal: InteriorPortalDef) => {
     const cx = portal.interiorCenter.x;
@@ -12,6 +18,8 @@ export function buildInteriors(scene: THREE.Scene): () => void {
 
     const group = new THREE.Group();
     group.position.set(cx, cy, cz);
+    group.visible = false;
+    interiorGroups.set(portal.id, group);
 
     const isMarket = portal.kind === 'supermarket';
     const isHouse = portal.kind === 'house';
@@ -278,7 +286,14 @@ export function buildInteriors(scene: THREE.Scene): () => void {
     scene.add(group);
   });
 
-  return () => {
-    disposables.forEach((d) => d.dispose());
+  return {
+    setActiveInterior: (id: string | null) => {
+      interiorGroups.forEach((grp, key) => {
+        grp.visible = key === id;
+      });
+    },
+    dispose: () => {
+      disposables.forEach((d) => d.dispose());
+    },
   };
 }

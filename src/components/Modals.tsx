@@ -21,7 +21,6 @@ import {
   Signal,
   MapPin,
   Wallet,
-  Power,
   Navigation,
   Home,
 } from 'lucide-react';
@@ -36,6 +35,7 @@ interface PauseModalProps {
   onAdvanceTime: () => void;
   onSetQualityMode: (mode: QualityMode) => void;
   onSetLanguage: (lang: Language) => void;
+  onRedeemCode: (code: string) => { ok: boolean; message: string };
 }
 
 const QUALITY_MODES: QualityMode[] = ['very_low', 'low', 'medium', 'high', 'ultra'];
@@ -49,8 +49,11 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onAdvanceTime,
   onSetQualityMode,
   onSetLanguage,
+  onRedeemCode,
 }) => {
   const [tab, setTab] = useState<'environment' | 'missions' | 'unity'>('environment');
+  const [codeInput, setCodeInput] = useState('');
+  const [codeFeedback, setCodeFeedback] = useState<{ ok: boolean; message: string } | null>(null);
   const t = getText(hud.language);
   const isRtl = hud.language === 'ar';
 
@@ -234,6 +237,55 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Developer / Secret Code */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-amber-400">{t.devCodeTitle}</h4>
+                    {hud.devUnlocked && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-black">
+                        OK
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400">{t.devCodeDesc}</p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const res = onRedeemCode(codeInput);
+                      setCodeFeedback(res);
+                      if (res.ok) setCodeInput('');
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      placeholder={t.devCodePlaceholder}
+                      dir="ltr"
+                      className="flex-1 px-3 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs font-mono font-bold text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer shrink-0"
+                    >
+                      {t.devCodeApply}
+                    </button>
+                  </form>
+                  {codeFeedback && (
+                    <div
+                      className={`text-[11px] font-bold ${
+                        codeFeedback.ok ? 'text-emerald-400' : 'text-rose-400'
+                      }`}
+                    >
+                      {codeFeedback.message}
+                    </div>
+                  )}
+                  {hud.devUnlocked && !codeFeedback && (
+                    <div className="text-[11px] font-bold text-emerald-400">{t.devCodeUnlocked}</div>
+                  )}
+                </div>
               </div>
 
               <div className="p-4 rounded-lg bg-slate-950/70 border border-slate-800 space-y-2 text-xs text-slate-300">
@@ -241,26 +293,29 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                 {hud.language === 'ar' ? (
                   <>
                     <div><strong className="text-amber-400">عصا التحكم / WASD:</strong> المشي والسباحة والقيادة</div>
+                    <div><strong className="text-cyan-400">منظور أول / C:</strong> تبديل الكاميرا (منظور أول داخل السيارات والدراجات والطائرات ومع الأسلحة)</div>
+                    <div><strong className="text-sky-400">الطيران (طائرة):</strong> Space / صعود، Shift / نزول للسفر إلى الجزيرة والعودة</div>
                     <div><strong className="text-amber-400">زر اليد / V:</strong> ضرب الأشخاص القريبين</div>
                     <div><strong className="text-amber-400">زر الإطلاق / G:</strong> إطلاق النار بالمسدس، الشوزن، البندقية، أو RPG</div>
                     <div><strong className="text-amber-400">تبديل السلاح / 1-6:</strong> يد، مسدس، رشاش، شوزن، بندقية، RPG</div>
-                    <div><strong className="text-amber-400">سرقة / ركوب / F:</strong> سرقة سيارة، دراجة نارية، أو بسكليت</div>
-                    <div><strong className="text-amber-400">تفاعل / E:</strong> دخول المتاجر والمعارض وبدء المهام</div>
-                    <div><strong className="text-emerald-400">الهاتف / P:</strong> استدعاء سياراتك المشتراة إلى مكان آمن</div>
+                    <div><strong className="text-amber-400">سرقة / ركوب / F:</strong> سرقة سيارة، دراجة نارية، بسكليت أو طائرة</div>
+                    <div><strong className="text-amber-400">تفاعل / E:</strong> دخول المتاجر والمعارض أو شراء البيوت للدخول</div>
+                    <div><strong className="text-emerald-400">الهاتف / P:</strong> استدعاء سياراتك وطائراتك المشتراة إلى مكان آمن</div>
                     <div><strong className="text-amber-400">الحقيبة / B:</strong> تبديل وارتداء السكنات المملوكة</div>
                     <div><strong className="text-amber-400">سحب الشاشة:</strong> تحريك الكاميرا 360 درجة</div>
                   </>
                 ) : (
                   <>
-                    <div><strong className="text-amber-400">WASD / Arrows:</strong> Walk, Swim, Drive, Steer</div>
+                    <div><strong className="text-amber-400">WASD / Arrows:</strong> Walk, Swim, Drive, Fly</div>
+                    <div><strong className="text-cyan-400">C / Camera Button:</strong> Toggle 1st-Person & 3rd-Person View</div>
+                    <div><strong className="text-sky-400">Airplane Controls:</strong> Space Climb · Shift Descend · Fly to Palm Cove Island</div>
                     <div><strong className="text-amber-400">V / Punch Button:</strong> Punch Nearby Pedestrian</div>
                     <div><strong className="text-amber-400">Click / G:</strong> Fire Weapon (Pistol, SMG, Shotgun, Rifle, RPG)</div>
-                    <div><strong className="text-amber-400">1–6 / Tab:</strong> Switch Weapon (Fists, Pistol, SMG, Shotgun, Rifle, RPG)</div>
-                    <div><strong className="text-amber-400">F:</strong> Steal Traffic/Police Car, Bike, or Enter/Exit</div>
-                    <div><strong className="text-amber-400">E:</strong> Enter Shop / Showroom / Start Mission</div>
+                    <div><strong className="text-amber-400">1–6 / Tab:</strong> Switch Weapon</div>
+                    <div><strong className="text-amber-400">F:</strong> Enter/Exit or Steal Vehicles & Airplanes</div>
+                    <div><strong className="text-amber-400">E:</strong> Enter Shops or Buy Houses to Unlock</div>
                     <div><strong className="text-emerald-400">P / Green Phone:</strong> Summon Owned Vehicles Safely</div>
                     <div><strong className="text-amber-400">B / Backpack:</strong> Equip & Swap Owned Skins</div>
-                    <div><strong className="text-amber-400">L / Q / H:</strong> Headlights / Left Signal / Horn & Bike Bell</div>
                     <div><strong className="text-amber-400">Mouse Drag & Wheel:</strong> 360° Orbit & Zoom</div>
                   </>
                 )}
@@ -424,6 +479,7 @@ export const WastedModal: React.FC<WastedModalProps> = ({ language, onRespawn })
 interface PhoneModalProps {
   hud: HudSnapshot;
   onSummonVehicle: (classId: VehicleClassId) => void;
+  onTeleportToHouse: (houseId: string) => void;
   onSetGpsTarget: (pt: { x: number; z: number }) => void;
   onClose: () => void;
 }
@@ -431,12 +487,15 @@ interface PhoneModalProps {
 export const PhoneModal: React.FC<PhoneModalProps> = ({
   hud,
   onSummonVehicle,
+  onTeleportToHouse,
   onSetGpsTarget,
   onClose,
 }) => {
-  const [appTab, setAppTab] = useState<'cars' | 'maps' | 'bank'>('cars');
+  const [appTab, setAppTab] = useState<'cars' | 'houses' | 'maps' | 'bank'>('cars');
+  const [carQuery, setCarQuery] = useState('');
   const t = getText(hud.language);
   const isRtl = hud.language === 'ar';
+  const allHouses = INTERIOR_PORTALS.filter((p) => p.kind === 'house');
 
   const quickDestinations = INTERIOR_PORTALS.filter(
     (p) =>
@@ -512,22 +571,35 @@ export const PhoneModal: React.FC<PhoneModalProps> = ({
                   <h2 className="text-sm font-black text-white">
                     {appTab === 'cars'
                       ? t.phoneTitle
-                      : appTab === 'maps'
-                        ? t.phoneMapsTitle
-                        : t.phoneBankTitle}
+                      : appTab === 'houses'
+                        ? t.phoneHousesTitle
+                        : appTab === 'maps'
+                          ? t.phoneMapsTitle
+                          : t.phoneBankTitle}
                   </h2>
                   <p className="text-[10px] text-slate-300/80">
                     {appTab === 'cars'
                       ? t.phoneSub
-                      : appTab === 'maps'
-                        ? t.phoneMapsSub
-                        : isRtl
-                          ? hud.district.nameAr
-                          : hud.district.name}
+                      : appTab === 'houses'
+                        ? t.phoneHousesSub
+                        : appTab === 'maps'
+                          ? t.phoneMapsSub
+                          : isRtl
+                            ? hud.district.nameAr
+                            : hud.district.name}
                   </p>
                 </div>
-                <div className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black tabular-nums">
-                  ${hud.money.toLocaleString()}
+                <div className="flex items-center gap-1.5">
+                  <div className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black tabular-nums">
+                    ${hud.money.toLocaleString()}
+                  </div>
+                  <button
+                    onClick={onClose}
+                    className="p-1 rounded-md bg-white/10 hover:bg-rose-600 text-slate-200 cursor-pointer"
+                    aria-label="Close Phone"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 
@@ -535,6 +607,15 @@ export const PhoneModal: React.FC<PhoneModalProps> = ({
               <div className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5">
                 {appTab === 'cars' && (
                   <>
+                    {hud.ownedVehicles.length > 4 && (
+                      <input
+                        type="text"
+                        value={carQuery}
+                        onChange={(e) => setCarQuery(e.target.value)}
+                        placeholder={isRtl ? 'ابحث عن سيارة أو طائرة...' : 'Filter vehicles...'}
+                        className="w-full px-3 py-1.5 rounded-xl bg-slate-900/95 border border-white/15 text-xs text-white placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 shrink-0"
+                      />
+                    )}
                     {hud.ownedVehicles.length === 0 ? (
                       <div className="my-auto flex flex-col items-center text-center px-4 py-5 rounded-2xl bg-slate-900/85 border border-white/10 shadow-lg">
                         <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-emerald-400 mb-3">
@@ -551,39 +632,113 @@ export const PhoneModal: React.FC<PhoneModalProps> = ({
                         </button>
                       </div>
                     ) : (
-                      hud.ownedVehicles.map((classId) => {
-                        const spec = VEHICLE_CATALOG[classId];
-                        const maxKmh = Math.round(spec.maxSpeed * 3.6);
+                      hud.ownedVehicles
+                        .filter((classId) => {
+                          if (!carQuery.trim()) return true;
+                          const s = VEHICLE_CATALOG[classId];
+                          const q = carQuery.trim().toLowerCase();
+                          return (
+                            s.name.toLowerCase().includes(q) ||
+                            s.nameAr.toLowerCase().includes(q) ||
+                            s.category.toLowerCase().includes(q)
+                          );
+                        })
+                        .map((classId) => {
+                          const spec = VEHICLE_CATALOG[classId];
+                          const maxKmh = Math.round(spec.maxSpeed * 3.6);
+                          return (
+                            <div
+                              key={classId}
+                              className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-white/10 hover:border-emerald-400/60"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
+                                  <Car className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-black text-white truncate">
+                                    {isRtl ? spec.nameAr : spec.name}{' '}
+                                    <span className="text-amber-400">({maxKmh} {isRtl ? 'كم/س' : 'km/h'})</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">
+                                    {spec.category} · {maxKmh} KM/H
+                                  </div>
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() => onSummonVehicle(classId)}
+                                className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-[11px] font-black shrink-0 cursor-pointer"
+                              >
+                                {t.summonCar}
+                              </button>
+                            </div>
+                          );
+                        })
+                    )}
+                  </>
+                )}
+
+                {appTab === 'houses' && (
+                  <>
+                    {hud.ownedHouses.length === 0 && (
+                      <div className="p-3 rounded-2xl bg-orange-950/50 border border-orange-500/40 text-[11px] text-orange-100 leading-relaxed">
+                        {t.phoneHousesEmpty}
+                      </div>
+                    )}
+                    {[...allHouses]
+                      .sort((a, b) => Number(hud.ownedHouses.includes(b.id)) - Number(hud.ownedHouses.includes(a.id)))
+                      .map((h) => {
+                        const isOwned = hud.ownedHouses.includes(h.id);
                         return (
                           <div
-                            key={classId}
-                            className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-white/10 hover:border-emerald-400/60"
+                            key={h.id}
+                            className={`flex items-center justify-between gap-2.5 p-3 rounded-2xl border ${
+                              isOwned
+                                ? 'bg-slate-900/95 border-orange-400/50'
+                                : 'bg-slate-900/60 border-white/10 opacity-85'
+                            }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
-                                <Car className="w-5 h-5" />
+                              <div
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                  isOwned
+                                    ? 'bg-orange-500 text-slate-950'
+                                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                                }`}
+                              >
+                                {isOwned ? <Home className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                               </div>
                               <div className="min-w-0">
                                 <div className="text-xs font-black text-white truncate">
-                                  {isRtl ? spec.nameAr : spec.name}{' '}
-                                  <span className="text-amber-400">({maxKmh} {isRtl ? 'كم/س' : 'km/h'})</span>
+                                  {isRtl ? h.nameAr : h.name}
                                 </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {spec.category} · {maxKmh} KM/H
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {isOwned
+                                    ? t.owned
+                                    : `$${(h.housePrice ?? 5500).toLocaleString()}`}
                                 </div>
                               </div>
                             </div>
 
-                            <button
-                              onClick={() => onSummonVehicle(classId)}
-                              className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-[11px] font-black shrink-0 cursor-pointer"
-                            >
-                              {t.summonCar}
-                            </button>
+                            {isOwned ? (
+                              <button
+                                onClick={() => onTeleportToHouse(h.id)}
+                                className="px-3 py-2 rounded-xl bg-orange-500 hover:bg-orange-400 active:scale-95 text-slate-950 text-[11px] font-black shrink-0 cursor-pointer"
+                              >
+                                {t.teleportHouse}
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => routeToPortal(h.exteriorPos.x, h.exteriorPos.z)}
+                                className="px-2.5 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-300 text-[10px] font-black shrink-0 cursor-pointer"
+                              >
+                                GPS
+                              </button>
+                            )}
                           </div>
                         );
-                      })
-                    )}
+                      })}
                   </>
                 )}
 
@@ -672,11 +827,11 @@ export const PhoneModal: React.FC<PhoneModalProps> = ({
 
               {/* Realistic Smartphone Glass Dock (App Launcher Icons) + Home Gesture Bar */}
               <div className="px-3 pt-2 pb-2 bg-slate-950/90 border-t border-white/10 flex flex-col items-center gap-2 shrink-0">
-                <div className="w-full grid grid-cols-4 gap-2">
+                <div className="w-full grid grid-cols-4 gap-1.5">
                   <button
                     onClick={() => setAppTab('cars')}
                     className={`flex flex-col items-center gap-1 py-1.5 rounded-xl cursor-pointer ${
-                      appTab === 'cars' ? 'bg-white/10' : 'hover:bg-white/5'
+                      appTab === 'cars' ? 'bg-white/12' : 'hover:bg-white/5'
                     }`}
                   >
                     <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 shadow">
@@ -686,9 +841,21 @@ export const PhoneModal: React.FC<PhoneModalProps> = ({
                   </button>
 
                   <button
+                    onClick={() => setAppTab('houses')}
+                    className={`flex flex-col items-center gap-1 py-1.5 rounded-xl cursor-pointer ${
+                      appTab === 'houses' ? 'bg-white/12' : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center text-slate-950 shadow">
+                      <Home className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-200">{t.phoneAppHouses}</span>
+                  </button>
+
+                  <button
                     onClick={() => setAppTab('maps')}
                     className={`flex flex-col items-center gap-1 py-1.5 rounded-xl cursor-pointer ${
-                      appTab === 'maps' ? 'bg-white/10' : 'hover:bg-white/5'
+                      appTab === 'maps' ? 'bg-white/12' : 'hover:bg-white/5'
                     }`}
                   >
                     <div className="w-9 h-9 rounded-xl bg-sky-500 flex items-center justify-center text-slate-950 shadow">
@@ -700,23 +867,13 @@ export const PhoneModal: React.FC<PhoneModalProps> = ({
                   <button
                     onClick={() => setAppTab('bank')}
                     className={`flex flex-col items-center gap-1 py-1.5 rounded-xl cursor-pointer ${
-                      appTab === 'bank' ? 'bg-white/10' : 'hover:bg-white/5'
+                      appTab === 'bank' ? 'bg-white/12' : 'hover:bg-white/5'
                     }`}
                   >
                     <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 shadow">
                       <Wallet className="w-4 h-4" />
                     </div>
                     <span className="text-[9px] font-bold text-slate-200">{t.phoneAppBank}</span>
-                  </button>
-
-                  <button
-                    onClick={onClose}
-                    className="flex flex-col items-center gap-1 py-1.5 rounded-xl hover:bg-rose-500/15 cursor-pointer"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-rose-600 flex items-center justify-center text-white shadow">
-                      <Power className="w-4 h-4" />
-                    </div>
-                    <span className="text-[9px] font-bold text-slate-200">{t.exitCar}</span>
                   </button>
                 </div>
 

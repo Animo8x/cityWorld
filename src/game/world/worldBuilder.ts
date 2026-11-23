@@ -4,6 +4,8 @@ import { ProceduralTextureSet } from './textures';
 import {
   groundHeightAt,
   INTERIOR_PORTALS,
+  ISLAND_CENTER,
+  MAINLAND_BORDER,
   ROAD_SEGMENTS,
   TRAFFIC_INTERSECTIONS,
   WATER_LEVEL,
@@ -41,7 +43,7 @@ export function buildCityWorld(
   const trafficLights: TrafficLightNode[] = [];
   const disposables: Array<{ dispose: () => void }> = [];
 
-  const chunkSize = 300;
+  const chunkSize = 280;
   const chunks = new Map<string, THREE.Group>();
   const getChunk = (x: number, z: number): THREE.Group => {
     const cx = Math.floor(x / chunkSize);
@@ -58,7 +60,7 @@ export function buildCityWorld(
   };
 
   // 1. Procedural Terrain Mesh
-  const terrainSegs = isMobile ? 64 : 96;
+  const terrainSegs = isMobile ? 80 : 96;
   const terrainGeo = new THREE.PlaneGeometry(2600, 2600, terrainSegs, terrainSegs);
   terrainGeo.rotateX(-Math.PI / 2);
   const posAttr = terrainGeo.attributes.position;
@@ -71,7 +73,16 @@ export function buildCityWorld(
     const h = groundHeightAt(vx, vz);
     posAttr.setY(i, h);
 
-    if (vz > 300 && vx < 145) {
+    const onIsland = Math.hypot((vx - ISLAND_CENTER.x) / 1.05, (vz - ISLAND_CENTER.z) / 1.15) < 110;
+    if (onIsland) {
+      if (Math.abs(vx - ISLAND_CENTER.x) <= 22 && vz >= 685 && vz <= 825) {
+        _c.setHex(0x475569);
+      } else if (h < 1.25) {
+        _c.setHex(0xdcc592);
+      } else {
+        _c.setHex(0x3a6432);
+      }
+    } else if (vz > 300 && vx < 145) {
       _c.setHex(h < -0.5 ? 0x7c6f52 : 0xdcc592);
     } else if (vx >= -365 && vx <= 530 && vz >= -285 && vz <= 300) {
       const inPark = vx < -140 && vx > -330 && vz > 45 && vz < 195;
@@ -99,7 +110,7 @@ export function buildCityWorld(
 
   // 2. Animated Ocean Surface
   const waterUniforms = { uTime: { value: 0 } };
-  const waterGeo = new THREE.PlaneGeometry(2800, 1400, isMobile ? 28 : 48, isMobile ? 18 : 32);
+  const waterGeo = new THREE.PlaneGeometry(2800, 1400, isMobile ? 36 : 48, isMobile ? 24 : 32);
   waterGeo.rotateX(-Math.PI / 2);
   const waterMat = new THREE.MeshStandardMaterial({
     color: 0x0e5a7a,
@@ -911,6 +922,129 @@ export function buildCityWorld(
   addBoxCollider(-110, -400, 16, 22, barnY + 12);
   addBoxCollider(-96, -404, 6.4, 6.4, barnY + 15);
 
+  // 12B. TROPICAL ISLAND (Reachable by Airplane + Return Runway!)
+  const islandGroup = new THREE.Group();
+  const islRunway = new THREE.Mesh(new THREE.PlaneGeometry(22, 134), runwayMat);
+  islRunway.rotation.x = -Math.PI / 2;
+  islRunway.position.set(ISLAND_CENTER.x, 0.89, 756);
+  islRunway.receiveShadow = true;
+  islandGroup.add(islRunway);
+
+  // Island landing lights & coastal wooden pier
+  const beaconCyanMat = new THREE.MeshStandardMaterial({
+    color: 0x22d3ee,
+    emissive: 0x06b6d4,
+    emissiveIntensity: 2.2,
+  });
+  const beaconRedMat = new THREE.MeshStandardMaterial({
+    color: 0xef4444,
+    emissive: 0xef4444,
+    emissiveIntensity: 2.0,
+  });
+  disposables.push(beaconCyanMat, beaconRedMat);
+  const dummyStatic = new THREE.Object3D();
+  const beaconGeo = new THREE.CylinderGeometry(0.28, 0.35, 0.65, 6);
+  const beaconInst = new THREE.InstancedMesh(beaconGeo, beaconCyanMat, 12);
+  let beaconIdx = 0;
+  for (let bz = 696; bz <= 816; bz += 24) {
+    [-12.5, 12.5].forEach((bx) => {
+      dummyStatic.position.set(ISLAND_CENTER.x + bx, 1.15, bz);
+      dummyStatic.rotation.set(0, 0, 0);
+      dummyStatic.scale.setScalar(1);
+      dummyStatic.updateMatrix();
+      beaconInst.setMatrixAt(beaconIdx++, dummyStatic.matrix);
+    });
+  }
+  beaconInst.instanceMatrix.needsUpdate = true;
+  beaconInst.computeBoundingSphere();
+  islandGroup.add(beaconInst);
+  disposables.push(beaconGeo);
+
+  // Island Pier & Beach Tiki Hut
+  const pierWoodMat = new THREE.MeshStandardMaterial({ color: 0x854d0e, roughness: 0.85 });
+  const thatchMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.9 });
+  disposables.push(pierWoodMat, thatchMat);
+  const islPier = new THREE.Mesh(new THREE.BoxGeometry(6, 0.45, 24), pierWoodMat);
+  islPier.position.set(ISLAND_CENTER.x, 0.25, 668);
+  const hutFloor = new THREE.Mesh(new THREE.BoxGeometry(9, 0.4, 8), pierWoodMat);
+  const hutY = groundHeightAt(ISLAND_CENTER.x - 42, 768);
+  hutFloor.position.set(ISLAND_CENTER.x - 42, hutY + 0.2, 768);
+  const hutRoof = new THREE.Mesh(new THREE.ConeGeometry(6.8, 3.6, 4), thatchMat);
+  hutRoof.position.set(ISLAND_CENTER.x - 42, hutY + 5.2, 768);
+  hutRoof.rotation.y = Math.PI / 4;
+  islandGroup.add(islPier, hutFloor, hutRoof);
+  [
+    [-3.6, -3.2],
+    [3.6, -3.2],
+    [-3.6, 3.2],
+    [3.6, 3.2],
+  ].forEach(([ox, oz]) => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 3.8, 6), pierWoodMat);
+    post.position.set(ISLAND_CENTER.x - 42 + ox, hutY + 2.1, 768 + oz);
+    islandGroup.add(post);
+  });
+  scene.add(islandGroup);
+
+  // 12C. WORLD BORDER BUOYS & PERIMETER POSTS (Batched into 3 InstancedMeshes -> 3 draw calls instead of 212!)
+  const borderGroup = new THREE.Group();
+  const buoyGeo = new THREE.CylinderGeometry(0.55, 0.85, 2.2, 8);
+  const capGeo = new THREE.SphereGeometry(0.42, 8, 6);
+  const postGeo = new THREE.BoxGeometry(1.1, 4.2, 1.1);
+  disposables.push(buoyGeo, capGeo, postGeo);
+
+  const buoyPositions: Array<[number, number, number]> = [];
+  const postPositions: Array<[number, number, number]> = [];
+  const capPositions: Array<[number, number, number]> = [];
+
+  for (let bx = -MAINLAND_BORDER; bx <= MAINLAND_BORDER; bx += 38) {
+    buoyPositions.push([bx, WATER_LEVEL + 0.65, MAINLAND_BORDER + 2]);
+    capPositions.push([bx, WATER_LEVEL + 1.95, MAINLAND_BORDER + 2]);
+
+    const nh = groundHeightAt(bx, -MAINLAND_BORDER - 2);
+    postPositions.push([bx, nh + 2.1, -MAINLAND_BORDER - 2]);
+    capPositions.push([bx, nh + 4.4, -MAINLAND_BORDER - 2]);
+  }
+  for (let bz = -MAINLAND_BORDER; bz <= MAINLAND_BORDER; bz += 42) {
+    [-MAINLAND_BORDER - 2, MAINLAND_BORDER + 2].forEach((bx) => {
+      const h = groundHeightAt(bx, bz);
+      if (h < WATER_LEVEL) {
+        buoyPositions.push([bx, WATER_LEVEL + 0.65, bz]);
+        capPositions.push([bx, WATER_LEVEL + 1.95, bz]);
+      } else {
+        postPositions.push([bx, h + 2.1, bz]);
+        capPositions.push([bx, h + 4.4, bz]);
+      }
+    });
+  }
+
+  const buoyInst = new THREE.InstancedMesh(buoyGeo, stuccoWhiteMat, buoyPositions.length);
+  const postInst = new THREE.InstancedMesh(postGeo, darkMetalMat, postPositions.length);
+  const capInst = new THREE.InstancedMesh(capGeo, beaconRedMat, capPositions.length);
+
+  buoyPositions.forEach(([x, y, z], idx) => {
+    dummyStatic.position.set(x, y, z);
+    dummyStatic.updateMatrix();
+    buoyInst.setMatrixAt(idx, dummyStatic.matrix);
+  });
+  postPositions.forEach(([x, y, z], idx) => {
+    dummyStatic.position.set(x, y, z);
+    dummyStatic.updateMatrix();
+    postInst.setMatrixAt(idx, dummyStatic.matrix);
+  });
+  capPositions.forEach(([x, y, z], idx) => {
+    dummyStatic.position.set(x, y, z);
+    dummyStatic.updateMatrix();
+    capInst.setMatrixAt(idx, dummyStatic.matrix);
+  });
+  buoyInst.instanceMatrix.needsUpdate = true;
+  postInst.instanceMatrix.needsUpdate = true;
+  capInst.instanceMatrix.needsUpdate = true;
+  buoyInst.computeBoundingSphere();
+  postInst.computeBoundingSphere();
+  capInst.computeBoundingSphere();
+  borderGroup.add(buoyInst, postInst, capInst);
+  scene.add(borderGroup);
+
   // 13. INSTANCED TREES & STREETLAMPS & TRAFFIC LIGHTS
   const treePositions: Array<{ x: number; y: number; z: number; scale: number; palm: boolean }> = [];
   for (let i = 0; i < 160; i++) {
@@ -922,6 +1056,18 @@ export function buildCityWorld(
   }
   for (let bx = -320; bx <= 100; bx += 26) {
     treePositions.push({ x: bx, y: groundHeightAt(bx, 314), z: 314, scale: 1.05 + rand() * 0.25, palm: true });
+  }
+  // Tropical Island Palm Trees (outside airstrip clearway)
+  for (let i = 0; i < 36; i++) {
+    const ang = rand() * Math.PI * 2;
+    const rad = 28 + rand() * 52;
+    const tx = ISLAND_CENTER.x + Math.cos(ang) * rad;
+    const tz = ISLAND_CENTER.z + Math.sin(ang) * rad;
+    if (Math.abs(tx - ISLAND_CENTER.x) < 22 && tz >= 680 && tz <= 832) continue;
+    const ty = groundHeightAt(tx, tz);
+    if (ty > 0.3) {
+      treePositions.push({ x: tx, y: ty, z: tz, scale: 1.05 + rand() * 0.35, palm: true });
+    }
   }
   for (let i = 0; i < 240; i++) {
     const tx = -520 + rand() * 640;
@@ -942,7 +1088,7 @@ export function buildCityWorld(
   const trunksInst = new THREE.InstancedMesh(trunkGeo, trunkMat, treePositions.length);
   const crownsInst = new THREE.InstancedMesh(crownGeo, crownMat, treePositions.length);
   trunksInst.castShadow = false;
-  crownsInst.castShadow = !isMobile;
+  crownsInst.castShadow = true;
 
   const dummy = new THREE.Object3D();
   const tint = new THREE.Color();
@@ -992,26 +1138,39 @@ export function buildCityWorld(
   bulbsInst.computeBoundingSphere();
   scene.add(polesInst, bulbsInst);
 
-  // Traffic Lights
-  const redLightBase = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 0 });
-  const greenLightBase = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x22c55e, emissiveIntensity: 0 });
-  disposables.push(redLightBase, greenLightBase);
+  // Traffic Lights (Shared geometry + 2 phase-group materials instead of 64 per-intersection materials!)
+  const tlPostGeo = new THREE.CylinderGeometry(0.14, 0.16, 5.2, 6);
+  const tlHeadGeo = new THREE.BoxGeometry(0.6, 1.4, 0.6);
+  const tlBulbGeo = new THREE.SphereGeometry(0.18, 6, 6);
+  disposables.push(tlPostGeo, tlHeadGeo, tlBulbGeo);
+
+  const tlBuckets = [0, 1].map((bucketIdx) => {
+    const phaseOffset = bucketIdx === 0 ? 0 : 6;
+    const nsRedMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 0.1 });
+    const nsGreenMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x22c55e, emissiveIntensity: 2.4 });
+    const ewRedMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 2.4 });
+    const ewGreenMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x22c55e, emissiveIntensity: 0.1 });
+    disposables.push(nsRedMat, nsGreenMat, ewRedMat, ewGreenMat);
+    return { phaseOffset, lastNsGo: true, nsRedMat, nsGreenMat, ewRedMat, ewGreenMat };
+  });
 
   TRAFFIC_INTERSECTIONS.forEach((inter) => {
     const chunk = getChunk(inter.x, inter.z);
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 5.2, 6), darkMetalMat);
+    const bucketIdx = Math.round(inter.phaseOffset / 6) % 2;
+    const bucket = tlBuckets[bucketIdx];
+    const post = new THREE.Mesh(tlPostGeo, darkMetalMat);
     post.position.set(inter.x + 8.5, 2.6, inter.z + 8.5);
-    const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.4, 0.6), darkMetalMat);
+    const headBox = new THREE.Mesh(tlHeadGeo, darkMetalMat);
     headBox.position.set(inter.x + 8.5, 5.4, inter.z + 8.5);
 
-    const nsRed = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), redLightBase.clone());
+    const nsRed = new THREE.Mesh(tlBulbGeo, bucket.nsRedMat);
     nsRed.position.set(inter.x + 8.5, 5.75, inter.z + 8.18);
-    const nsGreen = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), greenLightBase.clone());
+    const nsGreen = new THREE.Mesh(tlBulbGeo, bucket.nsGreenMat);
     nsGreen.position.set(inter.x + 8.5, 5.15, inter.z + 8.18);
 
-    const ewRed = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), redLightBase.clone());
+    const ewRed = new THREE.Mesh(tlBulbGeo, bucket.ewRedMat);
     ewRed.position.set(inter.x + 8.18, 5.75, inter.z + 8.5);
-    const ewGreen = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), greenLightBase.clone());
+    const ewGreen = new THREE.Mesh(tlBulbGeo, bucket.ewGreenMat);
     ewGreen.position.set(inter.x + 8.18, 5.15, inter.z + 8.5);
 
     chunk.add(post, headBox, nsRed, nsGreen, ewRed, ewGreen);
@@ -1027,14 +1186,15 @@ export function buildCityWorld(
   });
 
   // Glowing Interior Portal Rings + Subtle Vertical Sky Beacons
+  const sharedRingGeo = new THREE.TorusGeometry(1.4, 0.14, 8, 20);
+  const sharedBeamGeo = new THREE.CylinderGeometry(0.18, 0.95, 16, 10, 1, true);
+  disposables.push(sharedRingGeo, sharedBeamGeo);
   INTERIOR_PORTALS.forEach((portal) => {
-    const ringGeo = new THREE.TorusGeometry(1.4, 0.14, 8, 24);
     const ringMat = new THREE.MeshStandardMaterial({
       color: portal.accentColor,
       emissive: portal.accentColor,
       emissiveIntensity: 1.9,
     });
-    const beamGeo = new THREE.CylinderGeometry(0.18, 0.95, 16, 12, 1, true);
     const beamMat = new THREE.MeshBasicMaterial({
       color: portal.accentColor,
       transparent: true,
@@ -1042,14 +1202,39 @@ export function buildCityWorld(
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    disposables.push(ringGeo, ringMat, beamGeo, beamMat);
-    const ring = new THREE.Mesh(ringGeo, ringMat);
+    disposables.push(ringMat, beamMat);
+    const ring = new THREE.Mesh(sharedRingGeo, ringMat);
     ring.rotation.x = Math.PI / 2;
     ring.position.set(portal.exteriorPos.x, portal.exteriorPos.y + 0.15, portal.exteriorPos.z);
-    const beam = new THREE.Mesh(beamGeo, beamMat);
+    const beam = new THREE.Mesh(sharedBeamGeo, beamMat);
     beam.position.set(portal.exteriorPos.x, portal.exteriorPos.y + 8.0, portal.exteriorPos.z);
     scene.add(ring, beam);
   });
+
+  let lastIsNight: boolean | null = null;
+  let lastIsRaining: boolean | null = null;
+  const chunkList = Array.from(chunks.values());
+
+  // Freeze static world matrices (all static geometry except animated radarDish) for CPU matrix speedup
+  const freezeStatic = (obj: THREE.Object3D) => {
+    if (obj === radarDish) return;
+    obj.updateMatrix();
+    obj.matrixAutoUpdate = false;
+    for (let i = 0; i < obj.children.length; i++) {
+      freezeStatic(obj.children[i]);
+    }
+  };
+  freezeStatic(terrainMesh);
+  freezeStatic(waterMesh);
+  freezeStatic(islandGroup);
+  freezeStatic(borderGroup);
+  freezeStatic(trunksInst);
+  freezeStatic(crownsInst);
+  freezeStatic(polesInst);
+  freezeStatic(bulbsInst);
+  for (let i = 0; i < chunkList.length; i++) {
+    freezeStatic(chunkList[i]);
+  }
 
   return {
     colliders,
@@ -1061,33 +1246,43 @@ export function buildCityWorld(
     roadMaterials,
     updateStreaming: (playerX: number, playerZ: number, streamRadius = 620) => {
       const r2 = streamRadius * streamRadius;
-      chunks.forEach((group) => {
+      for (let i = 0; i < chunkList.length; i++) {
+        const group = chunkList[i];
         const dx = group.userData.centerX - playerX;
         const dz = group.userData.centerZ - playerZ;
         group.visible = dx * dx + dz * dz < r2;
-      });
+      }
     },
     updateLightsAndWater: (time: number, isNight: boolean, isRaining: boolean, simTime: number) => {
       waterUniforms.uTime.value = time;
       radarDish.rotation.y = time * 1.1;
 
-      streetLampBulbsMat.emissiveIntensity = isNight ? 2.6 : 0.08;
-      skyscraperGlassMat.emissiveIntensity = isNight ? 1.55 : 0.1;
-      brickMat.emissiveIntensity = isNight ? 1.45 : 0.04;
-      nightWindowMat.emissiveIntensity = isNight ? 1.65 : 0.06;
+      if (isNight !== lastIsNight) {
+        lastIsNight = isNight;
+        streetLampBulbsMat.emissiveIntensity = isNight ? 2.6 : 0.08;
+        skyscraperGlassMat.emissiveIntensity = isNight ? 1.55 : 0.1;
+        brickMat.emissiveIntensity = isNight ? 1.45 : 0.04;
+        nightWindowMat.emissiveIntensity = isNight ? 1.65 : 0.06;
+      }
 
-      const targetRough = isRaining ? 0.24 : 0.82;
-      roadMaterials.forEach((m) => {
-        m.roughness = targetRough;
-      });
+      if (isRaining !== lastIsRaining) {
+        lastIsRaining = isRaining;
+        const targetRough = isRaining ? 0.24 : 0.82;
+        for (let i = 0; i < roadMaterials.length; i++) {
+          roadMaterials[i].roughness = targetRough;
+        }
+      }
 
-      for (const tl of trafficLights) {
-        const cyc = (simTime + tl.phaseOffset) % 12;
-        const nsGo = cyc < 6;
-        (tl.nsGreen.material as THREE.MeshStandardMaterial).emissiveIntensity = nsGo ? 2.4 : 0.1;
-        (tl.nsRed.material as THREE.MeshStandardMaterial).emissiveIntensity = nsGo ? 0.1 : 2.4;
-        (tl.ewGreen.material as THREE.MeshStandardMaterial).emissiveIntensity = !nsGo ? 2.4 : 0.1;
-        (tl.ewRed.material as THREE.MeshStandardMaterial).emissiveIntensity = !nsGo ? 0.1 : 2.4;
+      for (let i = 0; i < tlBuckets.length; i++) {
+        const b = tlBuckets[i];
+        const nsGo = ((simTime + b.phaseOffset) % 12) < 6;
+        if (nsGo !== b.lastNsGo) {
+          b.lastNsGo = nsGo;
+          b.nsGreenMat.emissiveIntensity = nsGo ? 2.4 : 0.1;
+          b.nsRedMat.emissiveIntensity = nsGo ? 0.1 : 2.4;
+          b.ewGreenMat.emissiveIntensity = !nsGo ? 2.4 : 0.1;
+          b.ewRedMat.emissiveIntensity = !nsGo ? 0.1 : 2.4;
+        }
       }
     },
     dispose: () => {

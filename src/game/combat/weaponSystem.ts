@@ -140,6 +140,13 @@ export class WeaponSystem {
     return WEAPON_CATALOG[this.currentWeapon];
   }
 
+  public hasActiveRockets(): boolean {
+    for (let i = 0; i < this.rockets.length; i++) {
+      if (this.rockets[i].active) return true;
+    }
+    return false;
+  }
+
   public cycleWeapon(): WeaponId {
     const owned = WEAPON_ORDER.filter((w) => this.ownedWeapons.has(w));
     if (owned.length === 0) return 'fists';
