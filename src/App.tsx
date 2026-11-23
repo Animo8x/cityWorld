@@ -64,6 +64,7 @@ export default function App() {
           onToggleMute={() => engineRef.current?.toggleMute()}
           onCycleWeapon={() => engineRef.current?.cycleWeapon()}
           onToggleCamera={() => engineRef.current?.toggleFirstPerson()}
+          onToggleWings={() => engineRef.current?.toggleVehicleWings()}
         />
       )}
 
@@ -72,6 +73,8 @@ export default function App() {
           language={hud.language}
           inVehicle={hud.inVehicle}
           isAirplane={hud.isAirplane}
+          canDeployWings={hud.canDeployWings}
+          wingsDeployed={hud.wingsDeployed}
           isSwimming={hud.isSwimming}
           nearPedestrian={hud.nearPedestrian}
           hasInteractionPrompt={Boolean(hud.interactionPrompt)}
@@ -83,6 +86,7 @@ export default function App() {
           onPressInteract={() => engineRef.current?.triggerInteract()}
           onPressHorn={() => engineRef.current?.triggerHorn()}
           onPressHeadlights={() => engineRef.current?.triggerHeadlights()}
+          onPressToggleWings={() => engineRef.current?.toggleVehicleWings()}
           onPressPunch={() => engineRef.current?.triggerPunch()}
           onFireChange={(firing) => engineRef.current?.setFiring(firing)}
           onPressCycleWeapon={() => engineRef.current?.cycleWeapon()}

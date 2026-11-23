@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { VehicleClassId } from '../types';
-import { TRAFFIC_VEHICLE_POOL_TYPES } from '../vehicles/vehicleCatalog';
-import { buildVehicleMesh, VehicleRig } from '../vehicles/vehicleMesh';
+import { RICH_COUNTRY_VEHICLE_TYPES, TRAFFIC_VEHICLE_POOL_TYPES } from '../vehicles/vehicleCatalog';
+import { attachNpcRiderToRig, buildVehicleMesh, VehicleRig } from '../vehicles/vehicleMesh';
 import { isBicycleClass } from '../vehicles/vehiclePhysics';
 import { getBridgeDeckHeight, groundHeightAt, TRAFFIC_INTERSECTIONS } from '../world/worldLayout';
 
@@ -22,6 +22,8 @@ export interface TrafficAgent {
   lane: TrafficLaneLoop;
   posAlong: number;
   speed: number;
+  pedalPhase: number;
+  isAuroria?: boolean;
   x: number;
   y: number;
   z: number;
@@ -59,18 +61,33 @@ const LANE_LOOPS: TrafficLaneLoop[] = [
   { axis: 'x', fixedCoord: 290 - 4.0, dir: -1, min: -350, max: 350, speedLimit: 23 },
 ];
 
+const AURORIA_LANE_LOOPS: TrafficLaneLoop[] = [
+  { axis: 'x', fixedCoord: -240 + 3.5, dir: 1, min: 865, max: 1135, speedLimit: 18 },
+  { axis: 'x', fixedCoord: -240 - 3.5, dir: -1, min: 865, max: 1135, speedLimit: 18 },
+  { axis: 'x', fixedCoord: -120 + 4.0, dir: 1, min: 830, max: 1135, speedLimit: 22 },
+  { axis: 'x', fixedCoord: -120 - 4.0, dir: -1, min: 830, max: 1135, speedLimit: 22 },
+  { axis: 'x', fixedCoord: 0 + 3.5, dir: 1, min: 865, max: 1135, speedLimit: 18 },
+  { axis: 'x', fixedCoord: 0 - 3.5, dir: -1, min: 865, max: 1135, speedLimit: 18 },
+  { axis: 'z', fixedCoord: 890 - 3.5, dir: 1, min: -275, max: 35, speedLimit: 19 },
+  { axis: 'z', fixedCoord: 1015 + 4.0, dir: -1, min: -275, max: 35, speedLimit: 22 },
+  { axis: 'z', fixedCoord: 1130 - 3.5, dir: 1, min: -275, max: 35, speedLimit: 19 },
+];
+
 export class TrafficSystem {
   public agents: TrafficAgent[] = [];
   private scene: THREE.Scene;
+  private mainlandCount: number;
   private activeLimit: number;
 
   constructor(scene: THREE.Scene, maxPool = 36) {
     this.scene = scene;
+    this.mainlandCount = maxPool;
     this.activeLimit = maxPool;
 
     for (let i = 0; i < maxPool; i++) {
       const classId = TRAFFIC_VEHICLE_POOL_TYPES[i % TRAFFIC_VEHICLE_POOL_TYPES.length];
       const rig = buildVehicleMesh(classId, undefined, false);
+      attachNpcRiderToRig(rig, classId);
       const colorHex = rig.paintMat.color.getHex();
       const lane = LANE_LOOPS[i % LANE_LOOPS.length];
       const posAlong = lane.min + ((i * 83) % Math.max(40, lane.max - lane.min));
@@ -112,6 +129,54 @@ export class TrafficSystem {
         lane,
         posAlong,
         speed: initialSpeed,
+        pedalPhase: Math.random() * Math.PI * 2,
+        x,
+        y,
+        z,
+        heading,
+        vx: 0,
+        vz: 0,
+        spinVel: 0,
+        knockedTimer: 0,
+        hp: 100,
+        exploded: false,
+        braking: false,
+      });
+    }
+
+    // 10 Dedicated Auroria Rich Country Luxury / Gold / Supercar NPCs
+    const richCount = 10;
+    for (let r = 0; r < richCount; r++) {
+      const classId = RICH_COUNTRY_VEHICLE_TYPES[r % RICH_COUNTRY_VEHICLE_TYPES.length];
+      const rig = buildVehicleMesh(classId, undefined, false);
+      const colorHex = rig.paintMat.color.getHex();
+      const lane = AURORIA_LANE_LOOPS[r % AURORIA_LANE_LOOPS.length];
+      const posAlong = lane.min + ((r * 61) % Math.max(40, lane.max - lane.min));
+      const x = lane.axis === 'x' ? posAlong : lane.fixedCoord;
+      const z = lane.axis === 'z' ? posAlong : lane.fixedCoord;
+      const heading =
+        lane.axis === 'x'
+          ? lane.dir > 0
+            ? Math.PI / 2
+            : -Math.PI / 2
+          : lane.dir > 0
+            ? 0
+            : Math.PI;
+      const y = groundHeightAt(x, z);
+      rig.root.position.set(x, y, z);
+      rig.root.rotation.y = heading;
+      scene.add(rig.root);
+
+      this.agents.push({
+        id: `traffic_rich_${r}`,
+        classId,
+        colorHex,
+        rig,
+        lane,
+        posAlong,
+        speed: lane.speedLimit * 0.95,
+        pedalPhase: 0,
+        isAuroria: true,
         x,
         y,
         z,
@@ -128,8 +193,8 @@ export class TrafficSystem {
   }
 
   public setActiveCount(count: number): void {
-    this.activeLimit = Math.min(this.agents.length, Math.max(8, count));
-    for (let i = 0; i < this.agents.length; i++) {
+    this.activeLimit = Math.min(this.mainlandCount, Math.max(8, count));
+    for (let i = 0; i < this.mainlandCount; i++) {
       if (i >= this.activeLimit) {
         this.agents[i].rig.root.visible = false;
       }
@@ -139,7 +204,8 @@ export class TrafficSystem {
   public findNearestAgent(x: number, z: number, maxDist = 5.2): TrafficAgent | null {
     let best: TrafficAgent | null = null;
     let bestSq = maxDist * maxDist;
-    for (let i = 0; i < this.activeLimit; i++) {
+    for (let i = 0; i < this.agents.length; i++) {
+      if (i >= this.activeLimit && i < this.mainlandCount) continue;
       const a = this.agents[i];
       if (a.exploded) continue;
       const dx = a.x - x;
@@ -226,6 +292,7 @@ export class TrafficSystem {
     simTime: number,
     isNight: boolean,
     playerX: number,
+    playerY: number,
     playerZ: number,
     playerInVehicle: boolean,
     cullDist: number,
@@ -233,7 +300,8 @@ export class TrafficSystem {
   ): void {
     const cullSq = cullDist * cullDist;
 
-    for (let i = 0; i < this.activeLimit; i++) {
+    for (let i = 0; i < this.agents.length; i++) {
+      if (i >= this.activeLimit && i < this.mainlandCount) continue;
       const a = this.agents[i];
 
       // Handle knocked / crashed traffic physics before returning to lane
@@ -296,8 +364,8 @@ export class TrafficSystem {
       }
 
       // 2. Yield to vehicle ahead in same lane
-      for (let j = 0; j < this.activeLimit; j++) {
-        if (i === j) continue;
+      for (let j = 0; j < this.agents.length; j++) {
+        if (i === j || (j >= this.activeLimit && j < this.mainlandCount)) continue;
         const other = this.agents[j];
         if (other.lane !== a.lane || other.knockedTimer > 0) continue;
         const dist = (other.posAlong - a.posAlong) * a.lane.dir;
@@ -307,11 +375,12 @@ export class TrafficSystem {
         }
       }
 
-      // 3. Yield / brake for player (on-foot hit check only; vehicle-to-vehicle resolved by rigid-body collider!)
+      // 3. Yield / brake for player (check vertical height so flying aircraft don't stop street cars!)
       const pdx = playerX - a.x;
       const pdz = playerZ - a.z;
+      const pdy = Math.abs(playerY - a.y);
       const pDistSq = pdx * pdx + pdz * pdz;
-      if (pDistSq < 225) {
+      if (pDistSq < 225 && pdy < 3.4) {
         const fwdX = Math.sin(a.heading);
         const fwdZ = Math.cos(a.heading);
         const dot = pdx * fwdX + pdz * fwdZ;
@@ -319,7 +388,7 @@ export class TrafficSystem {
           targetSpeed = 0;
           a.braking = true;
         }
-        if (!playerInVehicle && pDistSq < 2.3 && a.speed > 3.5) {
+        if (!playerInVehicle && pDistSq < 2.3 && pdy < 2.1 && a.speed > 3.5) {
           onPlayerImpact(Math.min(1, a.speed / 18));
           a.speed = 0;
         }
@@ -353,6 +422,12 @@ export class TrafficSystem {
       const spins = a.rig.wheelSpinMeshes;
       for (let k = 0; k < spins.length; k++) {
         spins[k].rotation.x += spin;
+      }
+      if (isBicycleClass(a.classId) && a.rig.npcLeftLegPivot && a.rig.npcRightLegPivot) {
+        a.pedalPhase += Math.abs(a.speed) * dt * 1.45;
+        const cosP = Math.cos(a.pedalPhase) * 0.44;
+        a.rig.npcLeftLegPivot.rotation.x = -0.78 + cosP;
+        a.rig.npcRightLegPivot.rotation.x = -0.78 - cosP;
       }
       const headLevel = isNight ? 2.2 : 0.15;
       const heads = a.rig.headlightMeshes;

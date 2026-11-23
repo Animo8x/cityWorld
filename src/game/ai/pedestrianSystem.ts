@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { groundHeightAt } from '../world/worldLayout';
+import { buildMemeCostumeAttachables } from '../player/memeCostumes';
+import { MEME_SKIN_IDS, PLAYER_SKINS } from '../player/skinCatalog';
 
 export interface Pedestrian {
   id: string;
@@ -21,6 +23,7 @@ export interface Pedestrian {
   ejectStumbleTimer: number;
   respawnTimer: number;
   hp: number;
+  isAuroria?: boolean;
 }
 
 export class PedestrianSystem {
@@ -48,7 +51,7 @@ export class PedestrianSystem {
       return m;
     });
 
-    const sidewalkAnchors: Array<{ x: number; z: number; heading: number }> = [];
+    const sidewalkAnchors: Array<{ x: number; z: number; heading: number; isAuroria?: boolean }> = [];
     for (const roadCoord of [-129, -111, -49, -31, 31, 49, 111, 129]) {
       for (let t = -140; t <= 220; t += 45) {
         sidewalkAnchors.push({ x: roadCoord, z: t, heading: Math.random() > 0.5 ? 0 : Math.PI });
@@ -57,11 +60,71 @@ export class PedestrianSystem {
     for (let bx = -240; bx <= 80; bx += 32) {
       sidewalkAnchors.push({ x: bx, z: 306, heading: Math.PI / 2 });
     }
+    // Add Auroria Rich Country luxury promenade anchors at end of anchor cycle
+    const auroriaAnchors: Array<{ x: number; z: number; heading: number; isAuroria: boolean }> = [
+      { x: 899, z: -180, heading: 0, isAuroria: true },
+      { x: 1005, z: -130, heading: Math.PI / 2, isAuroria: true },
+      { x: 1025, z: -110, heading: -Math.PI / 2, isAuroria: true },
+      { x: 1121, z: -160, heading: Math.PI, isAuroria: true },
+      { x: 960, z: -231, heading: Math.PI / 2, isAuroria: true },
+      { x: 1060, z: -9, heading: -Math.PI / 2, isAuroria: true },
+    ];
+
+    const memeShirtMats = new Map<string, THREE.MeshStandardMaterial>();
+    const memePantsMats = new Map<string, THREE.MeshStandardMaterial>();
+    for (const mId of MEME_SKIN_IDS) {
+      const sDef = PLAYER_SKINS[mId];
+      const sm = new THREE.MeshStandardMaterial({
+        color: sDef.jacketColor,
+        roughness: sDef.roughness,
+        metalness: sDef.metalness,
+        emissive: sDef.emissive ?? 0x000000,
+        emissiveIntensity: sDef.emissiveIntensity ?? 0,
+      });
+      const pm = new THREE.MeshStandardMaterial({
+        color: sDef.pantsColor,
+        roughness: sDef.roughness + 0.1,
+        metalness: sDef.metalness * 0.6,
+      });
+      memeShirtMats.set(mId, sm);
+      memePantsMats.set(mId, pm);
+      this.disposables.push(sm, pm);
+    }
+    const auroriaSuitMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.35,
+      metalness: 0.2,
+    });
+    const auroriaGoldPantsMat = new THREE.MeshStandardMaterial({
+      color: 0xd4af37,
+      roughness: 0.25,
+      metalness: 0.85,
+    });
+    this.disposables.push(auroriaSuitMat, auroriaGoldPantsMat);
 
     for (let i = 0; i < maxPool; i++) {
-      const anchor = sidewalkAnchors[i % sidewalkAnchors.length];
+      const anchor =
+        i >= maxPool - 6
+          ? auroriaAnchors[(i - (maxPool - 6)) % auroriaAnchors.length]
+          : sidewalkAnchors[i % sidewalkAnchors.length];
       const root = new THREE.Group();
-      const sMat = shirtMats[i % shirtMats.length];
+      const isAuroria = Boolean(anchor.isAuroria);
+      // Roughly 45% of mainland pedestrians wear funny meme costumes!
+      const memeId =
+        !isAuroria && i % 2 === 0
+          ? MEME_SKIN_IDS[Math.floor(i / 2) % MEME_SKIN_IDS.length]
+          : null;
+
+      const sMat = isAuroria
+        ? auroriaSuitMat
+        : memeId
+          ? (memeShirtMats.get(memeId) ?? shirtMats[0])
+          : shirtMats[i % shirtMats.length];
+      const pMat = isAuroria
+        ? auroriaGoldPantsMat
+        : memeId
+          ? (memePantsMats.get(memeId) ?? pantsMat)
+          : pantsMat;
 
       const torso = new THREE.Mesh(torsoGeo, sMat);
       torso.position.set(0, 1.0, 0);
@@ -75,12 +138,21 @@ export class PedestrianSystem {
       const rightArm = new THREE.Mesh(limbGeo, sMat);
       rightArm.position.set(0.28, 0.98, 0);
 
-      const leftLeg = new THREE.Mesh(legGeo, pantsMat);
+      const leftLeg = new THREE.Mesh(legGeo, pMat);
       leftLeg.position.set(-0.1, 0.36, 0);
-      const rightLeg = new THREE.Mesh(legGeo, pantsMat);
+      const rightLeg = new THREE.Mesh(legGeo, pMat);
       rightLeg.position.set(0.1, 0.36, 0);
 
       root.add(torso, head, leftArm, rightArm, leftLeg, rightLeg);
+
+      if (memeId) {
+        const costume = buildMemeCostumeAttachables(memeId);
+        costume.torsoGroup.position.set(0, 1.0, 0);
+        costume.torsoGroup.scale.setScalar(0.92);
+        costume.headGroup.position.set(0, 1.44, 0);
+        costume.headGroup.scale.setScalar(0.92);
+        root.add(costume.torsoGroup, costume.headGroup);
+      }
 
       const x = anchor.x + (Math.random() - 0.5) * 4;
       const z = anchor.z + (Math.random() - 0.5) * 8;
@@ -108,6 +180,7 @@ export class PedestrianSystem {
         ejectStumbleTimer: 0,
         respawnTimer: 0,
         hp: 40,
+        isAuroria: Boolean(anchor.isAuroria),
       });
     }
   }
@@ -177,12 +250,13 @@ export class PedestrianSystem {
 
   /** Ejects an angry/panicked NPC driver onto the street beside the hijacked car */
   public spawnEjectedDriver(carX: number, carZ: number, carHeading: number): void {
-    let candidate = this.peds.find((p) => p.respawnTimer > 0) ?? null;
+    let candidate = this.peds.find((p) => !p.isAuroria && p.respawnTimer > 0) ?? null;
     if (!candidate) {
-      // Pick the furthest pedestrian from the player/car
+      // Pick the furthest non-Auroria pedestrian from the player/car
       let maxDistSq = -1;
       for (let i = 0; i < this.activeLimit; i++) {
         const p = this.peds[i];
+        if (p.isAuroria) continue;
         const dSq = (p.x - carX) ** 2 + (p.z - carZ) ** 2;
         if (dSq > maxDistSq) {
           maxDistSq = dSq;
@@ -226,6 +300,7 @@ export class PedestrianSystem {
   public update(
     dt: number,
     playerX: number,
+    playerY: number,
     playerZ: number,
     playerSpeed: number,
     playerInVehicle: boolean,
@@ -262,6 +337,7 @@ export class PedestrianSystem {
 
       const dxp = p.x - playerX;
       const dzp = p.z - playerZ;
+      const dy = Math.abs(playerY - p.y);
       const distSq = dxp * dxp + dzp * dzp;
 
       p.root.visible = distSq < cullSq;
@@ -275,21 +351,21 @@ export class PedestrianSystem {
       }
 
       // Gently step aside if player on foot brushes/touches them — NO crime!
-      if (!playerInVehicle && distSq < 0.85) {
+      if (!playerInVehicle && distSq < 0.85 && dy < 2.2) {
         const d = Math.sqrt(distSq) || 0.1;
         p.x += (dxp / d) * (0.95 - d);
         p.z += (dzp / d) * (0.95 - d);
       }
 
-      // Flee if a fast vehicle approaches closely
-      if (playerInVehicle && distSq < 90 && playerSpeed > 11) {
+      // Flee if a fast vehicle approaches closely at ground height (ignore high-flying planes!)
+      if (playerInVehicle && distSq < 90 && dy < 8.5 && playerSpeed > 11) {
         p.panicTimer = 4.0;
         p.idleTimer = 0;
         p.heading = Math.atan2(dxp, dzp);
       }
 
-      // Only a fast vehicle collision hurts/hits pedestrians automatically
-      if (playerInVehicle && distSq < 2.2 && playerSpeed > 10.5) {
+      // Only a fast vehicle collision at street elevation hurts pedestrians (flying aircraft pass cleanly overhead)
+      if (playerInVehicle && distSq < 2.2 && dy < 2.3 && playerSpeed > 10.5) {
         const res = this.damagePedestrian(p.id, 40, playerX, playerZ);
         onVehicleHitPedestrian(res.killed);
         continue;
@@ -317,8 +393,13 @@ export class PedestrianSystem {
       }
 
       const speed = p.panicTimer > 0 ? p.walkSpeed * 2.8 : p.walkSpeed;
-      p.x = THREE.MathUtils.clamp(p.x + Math.sin(p.heading) * speed * dt, -330, 330);
-      p.z = THREE.MathUtils.clamp(p.z + Math.cos(p.heading) * speed * dt, -260, 314);
+      if (p.isAuroria) {
+        p.x = THREE.MathUtils.clamp(p.x + Math.sin(p.heading) * speed * dt, 770, 1155);
+        p.z = THREE.MathUtils.clamp(p.z + Math.cos(p.heading) * speed * dt, -310, 65);
+      } else {
+        p.x = THREE.MathUtils.clamp(p.x + Math.sin(p.heading) * speed * dt, -330, 330);
+        p.z = THREE.MathUtils.clamp(p.z + Math.cos(p.heading) * speed * dt, -260, 314);
+      }
       p.y = groundHeightAt(p.x, p.z);
 
       p.phase += dt * speed * 4.2;

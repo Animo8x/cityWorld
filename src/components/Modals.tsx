@@ -932,6 +932,7 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({ hud, onEquipSkin, 
             const isOwned = hud.ownedSkins.includes(skin.id);
             const isEquipped = hud.activeSkin === skin.id;
             const isGold = skin.id === 'pure_gold';
+            const isMeme = Boolean(skin.isMeme);
 
             return (
               <div
@@ -940,7 +941,9 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({ hud, onEquipSkin, 
                   isEquipped
                     ? 'bg-amber-950/35 border-amber-400'
                     : isOwned
-                      ? 'bg-slate-950 border-slate-700'
+                      ? isMeme
+                        ? 'bg-slate-950 border-pink-500/40'
+                        : 'bg-slate-950 border-slate-700'
                       : 'bg-slate-950/60 border-slate-800/80 opacity-80'
                 }`}
               >
@@ -949,12 +952,19 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({ hud, onEquipSkin, 
                     className="w-11 h-11 rounded-lg border border-white/25 shrink-0 flex items-center justify-center shadow-inner"
                     style={{ backgroundColor: skin.swatchHex }}
                   >
-                    {isGold && <Sparkles className="w-5 h-5 text-slate-950" />}
-                    {!isOwned && !isGold && <Lock className="w-4 h-4 text-white/80" />}
+                    {(isGold || isMeme) && <Sparkles className="w-5 h-5 text-slate-950" />}
+                    {!isOwned && !isGold && !isMeme && <Lock className="w-4 h-4 text-white/80" />}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-extrabold text-white leading-snug">
-                      {isRtl ? skin.nameAr : skin.name}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-extrabold text-white leading-snug">
+                        {isRtl ? skin.nameAr : skin.name}
+                      </span>
+                      {isMeme && (
+                        <span className="px-1.5 py-0.5 rounded bg-pink-500/20 border border-pink-400/40 text-pink-300 text-[9px] font-black">
+                          {isRtl ? 'ميمز 3D' : '3D MEME'}
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
                       {isRtl ? skin.descriptionAr : skin.description}

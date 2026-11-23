@@ -3,6 +3,8 @@ import { ColliderBox, DistrictInfo, InteriorPortalDef } from '../types';
 export const WORLD_HALF_SIZE = 600;
 export const MAINLAND_BORDER = 532;
 export const ISLAND_CENTER = { x: -180, z: 760 };
+export const RICH_COUNTRY_CENTER = { x: 960, z: -120 };
+export const RICH_COUNTRY_BOUNDS = { minX: 730, maxX: 1190, minZ: -350, maxZ: 110 };
 export const WATER_LEVEL = -0.35;
 
 export const DISTRICTS: DistrictInfo[] = [
@@ -116,6 +118,16 @@ export const DISTRICTS: DistrictInfo[] = [
     center: { x: -180, z: 760 },
     mapColor: '#c2a66e',
   },
+  {
+    id: 'rich_country',
+    name: 'Auroria Royal Country',
+    nameAr: 'دولة أوروريا (بلد الأثرياء)',
+    subtitle: '24K Gold Mansions, Clean Boulevards & Luxury Supercars',
+    subtitleAr: 'قصور وفلل من ذهب وشوارع نظيفة وسيارات الأثرياء',
+    bounds: { minX: 730, maxX: 1190, minZ: -350, maxZ: 110 },
+    center: { x: 960, z: -120 },
+    mapColor: '#d4af37',
+  },
 ];
 
 export interface RoadSegment {
@@ -150,6 +162,13 @@ export const ROAD_SEGMENTS: RoadSegment[] = [
   { id: 'country_2', x1: -240, z1: -460, x2: 40, z2: -460, width: 10 },
   { id: 'country_3', x1: 40, z1: -460, x2: 40, z2: -265, width: 10 },
   { id: 'airport_link', x1: 240, z1: -265, x2: 240, z2: -165, width: 14 },
+  // Auroria Rich Country Clean Marble Boulevards
+  { id: 'aur_ew_1', x1: 865, z1: -240, x2: 1140, z2: -240, width: 14 },
+  { id: 'aur_ew_2', x1: 820, z1: -120, x2: 1140, z2: -120, width: 16, isHighway: true },
+  { id: 'aur_ew_3', x1: 865, z1: 0, x2: 1140, z2: 0, width: 14 },
+  { id: 'aur_ns_1', x1: 890, z1: -280, x2: 890, z2: 40, width: 14 },
+  { id: 'aur_ns_2', x1: 1015, z1: -280, x2: 1015, z2: 40, width: 16, isHighway: true },
+  { id: 'aur_ns_3', x1: 1130, z1: -280, x2: 1130, z2: 40, width: 14 },
 ];
 
 export interface TrafficIntersection {
@@ -491,6 +510,70 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
         description: 'Solid gleaming 24-karat gold outfit.',
         descriptionAr: 'أغلى وأفخم سكن مصنوع من الذهب الخالص اللامع!',
       },
+      {
+        id: 'buy_skin_meme_banana_suit',
+        label: 'Funny Meme · Banana Costume',
+        labelAr: 'ميمز مضحك · بدلة الموزة الراقصة',
+        cost: 1900,
+        description: 'Yellow banana peel suit with googly eyes & brown stem!',
+        descriptionAr: 'بدلة موزة صفراء مضحكة بعيون حولاء وعنق موزة!',
+      },
+      {
+        id: 'buy_skin_meme_frog_suit',
+        label: 'Funny Meme · Legend Pepe Frog',
+        labelAr: 'ميمز مضحك · بدلة الضفدع الأسطوري',
+        cost: 2200,
+        description: 'Bright green frog suit with huge bulging eyeballs!',
+        descriptionAr: 'بدلة ضفدع خضراء بعيون منتفخة عملاقة وابتسامة ميمز!',
+      },
+      {
+        id: 'buy_skin_meme_duck_suit',
+        label: 'Funny Meme · Quack Duck Onesie',
+        labelAr: 'ميمز مضحك · بدلة البطة العملاقة',
+        cost: 2400,
+        description: 'Plump yellow rubber-duck costume with orange flat bill.',
+        descriptionAr: 'بدلة بطة صفراء مع منقار برتقالي كبير وعيون مضحكة!',
+      },
+      {
+        id: 'buy_skin_meme_derp_suit',
+        label: 'Funny Meme · Giant Derp Head',
+        labelAr: 'ميمز مضحك · بدلة الوجه الأحول العملاق',
+        cost: 2600,
+        description: '2x giant derpy meme head with tongue out & pink hoodie!',
+        descriptionAr: 'رأس ميمز عملاق بعيون حولاء ولسان خارج مع هودي وردي!',
+      },
+      {
+        id: 'buy_skin_meme_chicken_suit',
+        label: 'Funny Meme · Cluck Chicken Suit',
+        labelAr: 'ميمز مضحك · بدلة الدجاجة المجنونة',
+        cost: 2900,
+        description: 'White feather costume with red comb, beak & side wings.',
+        descriptionAr: 'زي دجاجة بيضاء بعرف أحمر كبير ومنقار برتقالي وأجنحة!',
+      },
+      {
+        id: 'buy_skin_meme_shark_suit',
+        label: 'Funny Meme · Street Shark Suit',
+        labelAr: 'ميمز مضحك · بدلة سمكة القرش البري',
+        cost: 3300,
+        description: 'Blue shark costume with tall dorsal fin & toothy jaws!',
+        descriptionAr: 'بدلة قرش أزرق بزعنفة ظهرية وفك مليء بالأسنان الحادة!',
+      },
+      {
+        id: 'buy_skin_meme_toast_suit',
+        label: 'Funny Meme · Butter Toast Man',
+        labelAr: 'ميمز مضحك · بدلة التوست بالزبدة السائحة',
+        cost: 3600,
+        description: 'Crispy giant slice of toast with melting butter cube!',
+        descriptionAr: 'شريحة توست محمصة عملاقة مع مكعب زبدة ذائب فوق الرأس!',
+      },
+      {
+        id: 'buy_skin_meme_alien_suit',
+        label: 'Funny Meme · Neon Alien Visitor',
+        labelAr: 'ميمز مضحك · بدلة الفضائي الميمز المضيء',
+        cost: 4200,
+        description: 'Neon lime alien costume with glowing antenna & alien eyes.',
+        descriptionAr: 'زي مخلوق فضائي نيون بقرن استشعار مضيء وعيون فضائية!',
+      },
     ],
   },
   {
@@ -595,10 +678,34 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
       {
         id: 'buy_car_airplane',
         label: 'Tier 12 · SkyHopper Prop Plane (302 km/h)',
-        labelAr: 'فئة 12 · طائرة سيتي وورلد للطيران إلى الجزيرة (302 كم/س)',
-        cost: 12000,
-        description: 'Fly across the ocean to Palm Cove Island! Also parked at Airport.',
-        descriptionAr: 'تسمح لك بالطيران عبر البحر إلى الجزيرة (تتوفر أيضاً في المطار مجاناً).',
+        labelAr: 'فئة 12 · طائرة سيتي وورلد للطيران والسفر (302 كم/س)',
+        cost: 5500,
+        description: 'Fly across the ocean to Palm Cove Island & Auroria Rich Country!',
+        descriptionAr: 'تسمح لك بالطيران عبر البحر إلى بلد الأثرياء والجزيرة ($5,500).',
+      },
+      {
+        id: 'buy_car_gold_wing_coupe',
+        label: 'Tier 13 · Aurelia 24K Gold Wing GT (274 km/h · Flyable)',
+        labelAr: 'فئة 13 · أوريليا 24K الذهبية الطائرة (274 كم/س · أجنحة طيران)',
+        cost: 6400,
+        description: '24K gold supercar with deployable aero wings to drive or fly!',
+        descriptionAr: 'سيارة من الذهب الخالص تخرج أجنحة وتطير مثل الطائرة ($6,400)!',
+      },
+      {
+        id: 'buy_car_gold_wing_hyper',
+        label: 'Tier 14 · Helios 24K Gold Aero X (317 km/h · Flyable)',
+        labelAr: 'فئة 14 · هيليوس 24K الذهبية الطائرة (317 كم/س · أجنحة طيران)',
+        cost: 8800,
+        description: 'Supersonic 24K gold hypercar with twin-jet deployable wings!',
+        descriptionAr: 'سوبركار ذهبية فائقة السرعة تفتح أجنحتها وتطير لبلد الأثرياء ($8,800)!',
+      },
+      {
+        id: 'buy_car_gold_wing_sovereign',
+        label: 'Tier 15 · Monarch 24K Gold SkyKing (353 km/h · Flyable)',
+        labelAr: 'فئة 15 · مونارك الملكية الذهبية الطائرة (353 كم/س · أجنحة طيران)',
+        cost: 11800,
+        description: 'The ultimate 353 km/h royal 24K gold flying hypercar!',
+        descriptionAr: 'أفخم وأسرع سيارة ذهبية طائرة في العالم بسرعة 353 كم/س ($11,800)!',
       },
     ],
   },
@@ -759,6 +866,45 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
       },
     ],
   },
+  {
+    id: 'house_auroria_palace',
+    name: 'Auroria 24K Gold Palace (Wealthy Country)',
+    nameAr: 'قصر أوروريا الذهبي الملكي (بلد الأثرياء)',
+    subtitle: '24K Golden Country Palace · Banquet & Royal Suite · $38,000',
+    subtitleAr: 'قصر ذهبي في دولة أوروريا للأثرياء مع طعام وسرير فاخر ($38,000)',
+    kind: 'house',
+    houseSizeTier: 4,
+    housePrice: 38000,
+    exteriorPos: { x: 952, y: 0.65, z: -251 },
+    interiorCenter: { x: 1560, y: -120, z: 0 },
+    accentColor: 0xfacc15,
+    shopActions: [
+      {
+        id: 'buy_house',
+        label: 'Buy Auroria 24K Gold Palace',
+        labelAr: 'شراء وامتلاك قصر أوروريا الذهبي',
+        cost: 38000,
+        description: 'Own the sovereign 24K Gold Palace in Auroria.',
+        descriptionAr: 'تملك أفخم قصر ذهبي في بلد الأثرياء!',
+      },
+      {
+        id: 'house_eat',
+        label: 'Eat 24K Royal Feast (+60 HP & Full Stamina)',
+        labelAr: 'تناول مأدبة القصر الذهبي (+60 صحة وطاقة)',
+        cost: 0,
+        description: 'Dine inside your Auroria Palace.',
+        descriptionAr: 'وجبة ملكية داخل قصر أوروريا.',
+      },
+      {
+        id: 'house_sleep',
+        label: 'Sleep in Golden Suite (+7h · Full Recovery)',
+        labelAr: 'النوم في الجناح الذهبي (+7 ساعات · شفاء وإزالة الشرطة)',
+        cost: 0,
+        description: 'Full recovery in your Golden Palace bedroom.',
+        descriptionAr: 'شفاء 100% وإزالة نجوم الشرطة.',
+      },
+    ],
+  },
 ];
 
 export function getBridgeDeckHeight(x: number, z: number): number | null {
@@ -772,6 +918,25 @@ export function getBridgeDeckHeight(x: number, z: number): number | null {
 }
 
 export function groundHeightAt(x: number, z: number): number {
+  // Auroria Rich Country across the eastern sea (x: 730..1190, z: -350..110)
+  if (x >= 700 && x <= 1220 && z >= -380 && z <= 140) {
+    if (x >= 752 && x <= 1168 && z >= -328 && z <= 88) {
+      return 0.65;
+    }
+    const dxOut = Math.max(0, 752 - x, x - 1168);
+    const dzOut = Math.max(0, -328 - z, z - 88);
+    const edgeOut = Math.hypot(dxOut, dzOut);
+    if (edgeOut < 34) {
+      return 0.65 - (edgeOut / 34) * 3.85;
+    }
+    return -3.2;
+  }
+
+  // Deep ocean strait separating Mainland and Auroria Rich Country
+  if (x > 536) {
+    return -3.2;
+  }
+
   // Tropical Island out in the southern ocean (reachable by Airplane)
   const islDx = (x - ISLAND_CENTER.x) / 1.05;
   const islDz = (z - ISLAND_CENTER.z) / 1.15;
@@ -837,7 +1002,7 @@ export function groundHeightAt(x: number, z: number): number {
   }
 
   const edgeDist = Math.max(Math.abs(x) - 520, -z - 500);
-  if (edgeDist > 0 && z < 300) {
+  if (edgeDist > 0 && z < 300 && x < 536) {
     hill += Math.min(45, edgeDist * 0.22 + Math.sin(x * 0.04) * Math.cos(z * 0.04) * 4);
   }
 
@@ -845,21 +1010,31 @@ export function groundHeightAt(x: number, z: number): number {
 }
 
 export function getDistrictAt(x: number, z: number): DistrictInfo {
+  if (
+    x >= RICH_COUNTRY_BOUNDS.minX &&
+    x <= RICH_COUNTRY_BOUNDS.maxX &&
+    z >= RICH_COUNTRY_BOUNDS.minZ &&
+    z <= RICH_COUNTRY_BOUNDS.maxZ
+  ) {
+    return DISTRICTS.find((d) => d.id === 'rich_country')!;
+  }
+
   if (z > 620 && Math.hypot(x - ISLAND_CENTER.x, z - ISLAND_CENTER.z) < 135) {
     return DISTRICTS.find((d) => d.id === 'island')!;
   }
 
   if (
-    Math.abs(z - -265) < 11 ||
-    Math.abs(z - 290) < 10 ||
-    Math.abs(x - -340) < 10 ||
-    Math.abs(x - 350) < 10
+    x < 540 &&
+    (Math.abs(z - -265) < 11 ||
+      Math.abs(z - 290) < 10 ||
+      Math.abs(x - -340) < 10 ||
+      Math.abs(x - 350) < 10)
   ) {
     return DISTRICTS.find((d) => d.id === 'highway')!;
   }
 
   for (const d of DISTRICTS) {
-    if (d.id === 'highway' || d.id === 'island') continue;
+    if (d.id === 'highway' || d.id === 'island' || d.id === 'rich_country') continue;
     if (x >= d.bounds.minX && x <= d.bounds.maxX && z >= d.bounds.minZ && z <= d.bounds.maxZ) {
       return d;
     }

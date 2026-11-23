@@ -10,6 +10,7 @@ import {
   Repeat,
   Volume2,
   Zap,
+  Plane,
 } from 'lucide-react';
 import { Language, WeaponId } from '../game/types';
 import { getText } from '../i18n/translations';
@@ -29,6 +30,8 @@ interface MobileControlsProps {
   language: Language;
   inVehicle: boolean;
   isAirplane?: boolean;
+  canDeployWings?: boolean;
+  wingsDeployed?: boolean;
   isSwimming: boolean;
   nearPedestrian: boolean;
   hasInteractionPrompt: boolean;
@@ -40,6 +43,7 @@ interface MobileControlsProps {
   onPressInteract: () => void;
   onPressHorn: () => void;
   onPressHeadlights: () => void;
+  onPressToggleWings?: () => void;
   onPressPunch: () => void;
   onFireChange: (firing: boolean) => void;
   onPressCycleWeapon: () => void;
@@ -49,6 +53,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   language,
   inVehicle,
   isAirplane = false,
+  canDeployWings = false,
+  wingsDeployed = false,
   isSwimming,
   nearPedestrian,
   hasInteractionPrompt,
@@ -60,6 +66,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onPressInteract,
   onPressHorn,
   onPressHeadlights,
+  onPressToggleWings,
   onPressPunch,
   onFireChange,
   onPressCycleWeapon,
@@ -229,6 +236,23 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               >
                 <Lightbulb className="w-4 h-4" />
               </button>
+              {canDeployWings && onPressToggleWings && (
+                <button
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    onPressToggleWings();
+                  }}
+                  className={`px-2.5 sm:px-3 h-9 sm:h-11 rounded-full font-black text-[10px] sm:text-xs flex items-center gap-1 shadow-lg border ${
+                    wingsDeployed
+                      ? 'bg-yellow-400 text-slate-950 border-yellow-200'
+                      : 'bg-slate-950/85 text-amber-300 border-amber-500/70'
+                  }`}
+                  aria-label="Toggle Wings"
+                >
+                  <Plane className="w-3.5 h-3.5" />
+                  <span>{wingsDeployed ? t.wingsFlying : t.wingsDeploy}</span>
+                </button>
+              )}
               <button
                 onPointerDown={(e) => {
                   e.stopPropagation();
@@ -295,7 +319,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
         {/* Primary Action Row */}
         {inVehicle ? (
           <div className="flex items-end gap-1.5 sm:gap-2.5">
-            {isAirplane ? (
+            {isAirplane || wingsDeployed ? (
               <div className="flex flex-col gap-1 sm:gap-1.5">
                 <button
                   onPointerDown={(e) => {

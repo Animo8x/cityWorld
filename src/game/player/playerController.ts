@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ColliderBox, PlayerSkinId, WeaponId } from '../types';
 import { getBridgeDeckHeight, groundHeightAt, MAINLAND_BORDER, resolveCircleColliders, WATER_LEVEL } from '../world/worldLayout';
+import { buildMemeCostumeAttachables } from './memeCostumes';
 import { PLAYER_SKINS } from './skinCatalog';
 
 export class PlayerController {
@@ -11,6 +12,11 @@ export class PlayerController {
   private leftLegPivot: THREE.Group;
   private rightLegPivot: THREE.Group;
   private heldGunGroup: THREE.Group;
+  private hairMesh!: THREE.Mesh;
+  private shadesMesh!: THREE.Mesh;
+  private costumeTorsoAnchor: THREE.Group;
+  private costumeHeadAnchor: THREE.Group;
+  private memeCostumes: Partial<Record<PlayerSkinId, { torsoGroup: THREE.Group; headGroup: THREE.Group }>> = {};
   private weaponMeshes: Partial<Record<WeaponId, THREE.Group>> = {};
   private jacketMat: THREE.MeshStandardMaterial;
   private shirtMat: THREE.MeshStandardMaterial;
@@ -81,12 +87,19 @@ export class PlayerController {
 
     const hair = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.11, 0.28), hairMat);
     hair.position.set(0, 0.84, -0.01);
+    this.hairMesh = hair;
 
     const shades = new THREE.Mesh(
       new THREE.BoxGeometry(0.24, 0.06, 0.05),
       new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.15, metalness: 0.8 })
     );
     shades.position.set(0, 0.74, 0.13);
+    this.shadesMesh = shades;
+
+    this.costumeTorsoAnchor = new THREE.Group();
+    this.costumeTorsoAnchor.position.set(0, 0.28, 0);
+    this.costumeHeadAnchor = new THREE.Group();
+    this.costumeHeadAnchor.position.set(0, 0.72, 0);
 
     this.leftArmPivot = new THREE.Group();
     this.leftArmPivot.position.set(-0.31, 0.52, 0);
@@ -175,7 +188,17 @@ export class PlayerController {
     this.heldGunGroup.add(pistolGrp, smgGrp, shotGrp, rifleGrp, rpgGrp);
     this.rightArmPivot.add(rArm, rHand, this.heldGunGroup);
 
-    this.torsoPivot.add(chest, undershirt, head, hair, shades, this.leftArmPivot, this.rightArmPivot);
+    this.torsoPivot.add(
+      chest,
+      undershirt,
+      head,
+      hair,
+      shades,
+      this.costumeTorsoAnchor,
+      this.costumeHeadAnchor,
+      this.leftArmPivot,
+      this.rightArmPivot
+    );
 
     // Legs pivoted at hip
     this.leftLegPivot = new THREE.Group();
@@ -235,6 +258,30 @@ export class PlayerController {
     this.shoeMat.color.setHex(def.shoeColor);
     this.shoeMat.metalness = def.metalness * 0.8;
     this.shoeMat.roughness = def.roughness;
+
+    const isMeme = Boolean(def.isMeme);
+    this.hairMesh.visible = !isMeme;
+    this.shadesMesh.visible = !isMeme;
+
+    (Object.keys(this.memeCostumes) as PlayerSkinId[]).forEach((k) => {
+      const grp = this.memeCostumes[k];
+      if (grp) {
+        grp.torsoGroup.visible = false;
+        grp.headGroup.visible = false;
+      }
+    });
+
+    if (isMeme) {
+      let grp = this.memeCostumes[skinId];
+      if (!grp) {
+        grp = buildMemeCostumeAttachables(skinId);
+        this.costumeTorsoAnchor.add(grp.torsoGroup);
+        this.costumeHeadAnchor.add(grp.headGroup);
+        this.memeCostumes[skinId] = grp;
+      }
+      grp.torsoGroup.visible = true;
+      grp.headGroup.visible = true;
+    }
   }
 
   public setHeldWeaponVisual(weaponId: WeaponId, visible: boolean): void {
@@ -368,10 +415,14 @@ export class PlayerController {
       nextZ = THREE.MathUtils.clamp(nextZ, -this.interiorHalfD, this.interiorHalfD);
     } else {
       const onIslandAlready = this.z > 620;
+      const onAuroriaAlready = this.x >= 720;
       if (onIslandAlready) {
         // Keep safely on/around the Tropical Island beach perimeter when walking on the Island
         nextX = THREE.MathUtils.clamp(nextX, -295, -65);
         nextZ = THREE.MathUtils.clamp(nextZ, 645, 875);
+      } else if (onAuroriaAlready) {
+        nextX = THREE.MathUtils.clamp(nextX, 740, 1180);
+        nextZ = THREE.MathUtils.clamp(nextZ, -340, 100);
       } else {
         nextX = THREE.MathUtils.clamp(nextX, -MAINLAND_BORDER, MAINLAND_BORDER);
         nextZ = THREE.MathUtils.clamp(nextZ, -MAINLAND_BORDER, MAINLAND_BORDER);

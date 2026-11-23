@@ -27,10 +27,12 @@ import { VEHICLE_CATALOG } from './vehicles/vehicleCatalog';
 import { ExplosionSystem } from './vehicles/explosionSystem';
 import {
   applyBulletImpactToVehicleRig,
+  canFlyVehicle,
   CollidableVehicle,
   findSafeVehicleSpawnNearPlayer,
   isAirplaneClass,
   isBicycleClass,
+  isFlyingCarClass,
   resolveVehiclePairCollision,
   VehicleManager,
   WorldVehicle,
@@ -39,7 +41,12 @@ import { computeRoadGpsPath, GpsPathRenderer } from './world/gpsNavigation';
 import { buildInteriors, InteriorsHandle } from './world/interiors';
 import { createProceduralTextures, ProceduralTextureSet } from './world/textures';
 import { buildCityWorld, WorldBuildResult } from './world/worldBuilder';
-import { getDistrictAt, groundHeightAt, INTERIOR_PORTALS } from './world/worldLayout';
+import {
+  getDistrictAt,
+  groundHeightAt,
+  INTERIOR_PORTALS,
+  RICH_COUNTRY_BOUNDS,
+} from './world/worldLayout';
 
 export class CityWorldEngine {
   private container: HTMLElement;
@@ -82,6 +89,8 @@ export class CityWorldEngine {
   private ownedSkins = new Set<PlayerSkinId>(['classic']);
   private ownedHouses = new Set<string>();
   private customWaypoint: { x: number; z: number } | null = null;
+  private isAutoFlightWaypoint = false;
+  private autoFlightTargetKind: 'auroria' | 'mainland' | null = null;
   private gpsPath: GpsPoint[] = [];
   private gpsTargetPos: GpsPoint | null = null;
   private gpsLastCalcX = 9999;
@@ -423,6 +432,94 @@ export class CityWorldEngine {
     this.pushHud();
   }
 
+  public toggleVehicleWings(): void {
+    if (!this.activeVehicle || !isFlyingCarClass(this.activeVehicle.classId)) return;
+    this.sound.init();
+    this.activeVehicle.wingsDeployed = !this.activeVehicle.wingsDeployed;
+    this.sound.playDoorLatch();
+    const deployed = this.activeVehicle.wingsDeployed;
+    if (deployed) {
+      this.activateAutoFlightWaypoint(this.activeVehicle);
+    } else {
+      this.clearAutoFlightWaypoint();
+      this.missionBanner = {
+        title: this.language === 'ar' ? 'تم طي الأجنحة (وضع السيارة)' : 'Wings Folded (Road Mode)',
+        subtitle:
+          this.language === 'ar'
+            ? 'السيارة جاهزة للقيادة السريعة على الشوارع.'
+            : 'Switched back to high-speed street driving mode.',
+        kind: 'info',
+      };
+      this.bannerTimer = 3.0;
+    }
+    this.pushHud();
+  }
+
+  private activateAutoFlightWaypoint(veh: WorldVehicle): void {
+    const isFlightReady =
+      veh.classId === 'airplane' || (isFlyingCarClass(veh.classId) && veh.wingsDeployed);
+    if (!isFlightReady) return;
+
+    const inAuroria =
+      veh.x >= RICH_COUNTRY_BOUNDS.minX &&
+      veh.x <= RICH_COUNTRY_BOUNDS.maxX &&
+      veh.z >= RICH_COUNTRY_BOUNDS.minZ &&
+      veh.z <= RICH_COUNTRY_BOUNDS.maxZ;
+
+    if (!inAuroria) {
+      this.customWaypoint = { x: 805, z: -120 };
+      this.isAutoFlightWaypoint = true;
+      this.autoFlightTargetKind = 'auroria';
+      this.gpsLastTargetKey = '';
+      this.refreshGpsRoute(true);
+      this.missionBanner = {
+        title:
+          this.language === 'ar'
+            ? 'تم تحديد بلد الأثرياء (أوروريا) على الخريطة!'
+            : 'Auroria Rich Country Marked on Map!',
+        subtitle:
+          this.language === 'ar'
+            ? 'اتبع الخط السماوي شرقاً عبر البحر للوصول إلى أوروريا.'
+            : 'Follow the sky marker east across the sea to Auroria Rich Country!',
+        kind: 'success',
+      };
+    } else {
+      this.customWaypoint = { x: 355, z: -310 };
+      this.isAutoFlightWaypoint = true;
+      this.autoFlightTargetKind = 'mainland';
+      this.gpsLastTargetKey = '';
+      this.refreshGpsRoute(true);
+      this.missionBanner = {
+        title:
+          this.language === 'ar'
+            ? 'تم تحديد المدينة الرئيسية والمطار للعودة!'
+            : 'CityWorld Airport Marked for Return!',
+        subtitle:
+          this.language === 'ar'
+            ? 'اتبع المسار غرباً عبر البحر للعودة إلى المدينة الرئيسية.'
+            : 'Fly west across the strait to return to CityWorld mainland.',
+        kind: 'success',
+      };
+    }
+    this.bannerTimer = 4.5;
+  }
+
+  private clearAutoFlightWaypoint(): void {
+    if (!this.isAutoFlightWaypoint) return;
+    this.isAutoFlightWaypoint = false;
+    this.autoFlightTargetKind = null;
+    this.customWaypoint = null;
+    this.gpsLastTargetKey = '';
+    this.refreshGpsRoute(true);
+  }
+
+  private onBoardFlightVehicle(veh: WorldVehicle): void {
+    if (!canFlyVehicle(veh.classId)) return;
+    if (veh.classId === 'airplane' || (isFlyingCarClass(veh.classId) && veh.wingsDeployed)) {
+      this.activateAutoFlightWaypoint(veh);
+    }
+  }
+
   public toggleFirstPerson(): void {
     this.sound.init();
     const fp = this.cameraCtrl.toggleFirstPerson(this.activeVehicle?.heading ?? this.player.heading);
@@ -647,6 +744,7 @@ export class CityWorldEngine {
       this.player.setRidingPose('none', 0, 0);
       this.player.root.visible = !this.cameraCtrl.firstPerson;
       this.activeVehicle = null;
+      this.clearAutoFlightWaypoint();
     }
 
     // Keep at most 3 previously delivered phone vehicles
@@ -748,6 +846,7 @@ export class CityWorldEngine {
       this.activeVehicle.occupiedByPlayer = false;
       this.activeVehicle.rig.cabinGroup.visible = true;
       this.activeVehicle = null;
+      this.clearAutoFlightWaypoint();
     }
 
     this.player.inInterior = false;
@@ -786,6 +885,8 @@ export class CityWorldEngine {
 
   public setCustomWaypoint(pt: { x: number; z: number } | null): void {
     this.customWaypoint = pt;
+    this.isAutoFlightWaypoint = false;
+    this.autoFlightTargetKind = null;
     this.gpsLastTargetKey = '';
     this.refreshGpsRoute(true);
     this.pushHud();
@@ -963,6 +1064,9 @@ export class CityWorldEngine {
         buy_car_track_phantom: 'track_phantom',
         buy_car_nova_x: 'nova_x',
         buy_car_airplane: 'airplane',
+        buy_car_gold_wing_coupe: 'gold_wing_coupe',
+        buy_car_gold_wing_hyper: 'gold_wing_hyper',
+        buy_car_gold_wing_sovereign: 'gold_wing_sovereign',
       };
       const cls = clsMap[actionId] ?? 'sports';
       this.ownedVehicles.add(cls);
@@ -1043,6 +1147,7 @@ export class CityWorldEngine {
       this.activeVehicle.rig.cabinGroup.visible = true;
     }
     this.activeVehicle = null;
+    this.clearAutoFlightWaypoint();
     this.activeInterior = null;
     this.interiors.setActiveInterior(null);
     this.firingActive = false;
@@ -1356,11 +1461,11 @@ export class CityWorldEngine {
       title: this.language === 'ar' ? 'حدود العالم' : 'World Border Reached',
       subtitle: inAirplane
         ? this.language === 'ar'
-          ? 'وصلت إلى نهاية المجال الجوي! اتجه نحو الجزيرة أو المطار.'
-          : 'Outer airspace boundary reached! Head back toward the Island or Airport.'
+          ? 'وصلت إلى نهاية المجال الجوي! اتجه نحو بلد الأثرياء أو الجزيرة أو المطار.'
+          : 'Outer airspace boundary reached! Head toward Auroria, the Island, or Airport.'
         : this.language === 'ar'
-          ? 'لا يمكنك مغادرة الحدود سيراً أو بالسيارة! اذهب إلى المطار واركب طائرة للسفر إلى الجزيرة.'
-          : 'Border locked on land/sea! Fly an Airplane from the Airport to cross to the Island.',
+          ? 'لا يمكنك عبور البحر بالسيارة العادية! اشترِ طائرة ($5,500) أو سيارة ذهبية طائرة للسفر لبلد الأثرياء.'
+          : 'Border locked on land/sea! Fly an Airplane ($5,500) or 24K Gold Wing Car to Auroria!',
       kind: 'info',
     };
     this.bannerTimer = 3.5;
@@ -1374,6 +1479,7 @@ export class CityWorldEngine {
       if (occupied) {
         v.occupiedByPlayer = false;
         this.activeVehicle = null;
+        this.clearAutoFlightWaypoint();
         this.player.setRidingPose('none', 0, 0);
         this.player.x = v.x + Math.cos(v.heading) * 1.4;
         this.player.z = v.z - Math.sin(v.heading) * 1.4;
@@ -1660,7 +1766,9 @@ export class CityWorldEngine {
         this.player.setRidingPose('none', 0, 0);
         this.player.root.visible = !this.cameraCtrl.firstPerson;
         this.activeVehicle = null;
+        this.clearAutoFlightWaypoint();
         this.sound.playDoorLatch();
+        this.pushHud();
       } else {
         const ctx = this.getInteractionContext();
         if (ctx.nearVehicle) {
@@ -1673,6 +1781,7 @@ export class CityWorldEngine {
           if (this.activeVehicle.classId === 'police') {
             this.wanted.setMinimumStars(1);
           }
+          this.onBoardFlightVehicle(this.activeVehicle);
         } else if (ctx.nearPoliceUnit) {
           const snap = this.wanted.hijackPoliceCruiser(ctx.nearPoliceUnit);
           const hijacked = this.vehicleMgr.spawnHijackedVehicle('police', snap.x, snap.z, snap.heading, 0x0f172a);
@@ -1705,8 +1814,18 @@ export class CityWorldEngine {
           this.sound.playDoorLatch();
           this.pedestrians.triggerPanicNear(snap.x, snap.z, 22);
           this.wanted.setMinimumStars(1);
+          this.onBoardFlightVehicle(this.activeVehicle);
         }
       }
+    }
+
+    // Deploy / Fold Flight Wings on 24K Gold Flying Cars [X]
+    if (
+      this.justPressed.has('KeyX') &&
+      this.activeVehicle &&
+      isFlyingCarClass(this.activeVehicle.classId)
+    ) {
+      this.toggleVehicleWings();
     }
 
     // Explicit Punch / Fire edge presses
@@ -1820,7 +1939,7 @@ export class CityWorldEngine {
       this.world.updateLightsAndWater(this.simTime, this.weatherTime.isNight(), this.weatherTime.weather === 'rain', this.simTime);
       this.world.updateStreaming(0, 0, this.streamRadius);
       this.fpRig.root.visible = false;
-      this.traffic.update(dt, this.simTime, this.weatherTime.isNight(), 0, 0, false, this.trafficCullDist, () => {});
+      this.traffic.update(dt, this.simTime, this.weatherTime.isNight(), 0, 0, 0, false, this.trafficCullDist, () => {});
       this.cameraCtrl.updateTitleOrbit(this.camera, this.simTime);
     } else if (this.phase === 'playing') {
       this.manualOrbitTimer = Math.max(0, this.manualOrbitTimer - dt);
@@ -1858,10 +1977,11 @@ export class CityWorldEngine {
         const handbrake = this.held.has('Space') || this.virtualInput.handbrake;
         const kbClimb =
           (this.held.has('Space') ? 1 : 0) -
-          (this.held.has('ShiftLeft') || this.held.has('ShiftRight') || this.held.has('KeyX') ? 1 : 0);
+          (this.held.has('ShiftLeft') || this.held.has('ShiftRight') ? 1 : 0);
         const climb = kbClimb !== 0 ? kbClimb : this.virtualInput.climb;
 
-        const activeIsPlane = isAirplaneClass(this.activeVehicle.classId);
+        const activeCanFly = canFlyVehicle(this.activeVehicle.classId);
+        const wasWingsDeployed = Boolean(this.activeVehicle.wingsDeployed);
         this.vehicleMgr.update(
           dt,
           this.activeVehicle,
@@ -1879,10 +1999,14 @@ export class CityWorldEngine {
           (v) => {
             this.handleVehicleDestroyed(v, v === this.activeVehicle);
           },
-          () => this.notifyWorldBorder(activeIsPlane),
+          () => this.notifyWorldBorder(activeCanFly),
           this.player.x,
           this.player.z
         );
+
+        if (this.activeVehicle && !wasWingsDeployed && this.activeVehicle.wingsDeployed) {
+          this.activateAutoFlightWaypoint(this.activeVehicle);
+        }
 
         if (this.activeVehicle) {
           this.player.x = this.activeVehicle.x;
@@ -2032,11 +2156,13 @@ export class CityWorldEngine {
         : Math.hypot(this.player.vx, this.player.vz);
 
       if (!this.player.inInterior) {
+        const refEntityY = this.activeVehicle ? this.activeVehicle.y : this.player.y;
         this.traffic.update(
           dt,
           this.simTime,
           this.weatherTime.isNight(),
           this.player.x,
+          refEntityY,
           this.player.z,
           Boolean(this.activeVehicle),
           this.trafficCullDist,
@@ -2155,6 +2281,7 @@ export class CityWorldEngine {
         this.pedestrians.update(
           dt,
           this.player.x,
+          refEntityY,
           this.player.z,
           playerSpeed,
           Boolean(this.activeVehicle),
@@ -2240,18 +2367,48 @@ export class CityWorldEngine {
         }
       );
 
-      // Clear custom waypoint when reached & update Road GPS Ribbon
+      // Clear custom waypoint when reached (including arriving at target city/country!)
       if (this.customWaypoint) {
         const dx = this.customWaypoint.x - this.player.x;
         const dz = this.customWaypoint.z - this.player.z;
-        if (dx * dx + dz * dz < 81) {
+        const distSq = dx * dx + dz * dz;
+        const reachedAuroriaCity =
+          this.isAutoFlightWaypoint &&
+          this.autoFlightTargetKind === 'auroria' &&
+          this.player.x >= 795 &&
+          this.player.z >= -340 &&
+          this.player.z <= 100;
+        const reachedMainlandCity =
+          this.isAutoFlightWaypoint &&
+          this.autoFlightTargetKind === 'mainland' &&
+          this.player.x <= 365 &&
+          this.player.x >= -440 &&
+          this.player.z >= -440 &&
+          this.player.z <= 400;
+
+        if (distSq < (this.isAutoFlightWaypoint ? 36 * 36 : 81) || reachedAuroriaCity || reachedMainlandCity) {
+          const targetKind = this.autoFlightTargetKind;
           this.customWaypoint = null;
+          this.isAutoFlightWaypoint = false;
+          this.autoFlightTargetKind = null;
           this.missionBanner = {
-            title: this.language === 'ar' ? 'تم الوصول للوجهة' : 'Destination Reached',
-            subtitle: this.language === 'ar' ? 'تم إخفاء مسار الـ GPS.' : 'GPS route cleared.',
-            kind: 'info',
+            title:
+              targetKind === 'auroria'
+                ? this.language === 'ar'
+                  ? 'وصلت إلى بلد الأثرياء (أوروريا)!'
+                  : 'Arrived in Auroria Rich Country!'
+                : targetKind === 'mainland'
+                  ? this.language === 'ar'
+                    ? 'وصلت إلى المدينة الرئيسية!'
+                    : 'Arrived in CityWorld!'
+                  : this.language === 'ar'
+                    ? 'تم الوصول للوجهة'
+                    : 'Destination Reached',
+            subtitle:
+              this.language === 'ar' ? 'تمت إزالة التحديد من الخريطة تلقائياً.' : 'Map destination marker cleared.',
+            kind: targetKind ? 'success' : 'info',
           };
-          this.bannerTimer = 2.6;
+          this.bannerTimer = 3.2;
         }
       }
       this.refreshGpsRoute(false);
@@ -2345,11 +2502,28 @@ export class CityWorldEngine {
 
     const targetKey = `${target.x.toFixed(1)},${target.z.toFixed(1)}`;
     const movedSq = (refX - this.gpsLastCalcX) ** 2 + (refZ - this.gpsLastCalcZ) ** 2;
+    const isCrossingOcean =
+      (refX < 620 && (target.x >= 680 || target.z >= 580)) ||
+      (refX >= 680 && target.x < 620) ||
+      (refZ >= 580 && target.z < 550);
+    const isAirRoute =
+      isCrossingOcean ||
+      Boolean(
+        this.activeVehicle &&
+          (isAirplaneClass(this.activeVehicle.classId) ||
+            (isFlyingCarClass(this.activeVehicle.classId) && this.activeVehicle.wingsDeployed))
+      );
+
     if (force || targetKey !== this.gpsLastTargetKey || movedSq > 12.25) {
       this.gpsLastCalcX = refX;
       this.gpsLastCalcZ = refZ;
       this.gpsLastTargetKey = targetKey;
-      this.gpsPath = computeRoadGpsPath(refX, refZ, target.x, target.z, this.world.colliders);
+      this.gpsPath = isAirRoute
+        ? [
+            { x: refX, z: refZ },
+            { x: target.x, z: target.z },
+          ]
+        : computeRoadGpsPath(refX, refZ, target.x, target.z, this.world.colliders);
     }
 
     const showCustomBeacon = !missionTarget && this.customWaypoint ? this.customWaypoint : null;
@@ -2486,9 +2660,17 @@ export class CityWorldEngine {
       timePhase: this.weatherTime.getTimePhase(),
       weather: this.weatherTime.weather,
       inVehicle: Boolean(this.activeVehicle),
-      isAirplane: Boolean(this.activeVehicle && isAirplaneClass(this.activeVehicle.classId)),
+      isAirplane: Boolean(
+        this.activeVehicle &&
+          (isAirplaneClass(this.activeVehicle.classId) ||
+            (isFlyingCarClass(this.activeVehicle.classId) &&
+              (this.activeVehicle.wingsDeployed ||
+                this.activeVehicle.y > groundHeightAt(this.activeVehicle.x, this.activeVehicle.z) + 0.6)))
+      ),
+      canDeployWings: Boolean(this.activeVehicle && isFlyingCarClass(this.activeVehicle.classId)),
+      wingsDeployed: Boolean(this.activeVehicle?.wingsDeployed),
       altitude:
-        this.activeVehicle && isAirplaneClass(this.activeVehicle.classId)
+        this.activeVehicle && canFlyVehicle(this.activeVehicle.classId)
           ? Math.max(0, Math.round(this.activeVehicle.y - Math.max(groundHeightAt(this.activeVehicle.x, this.activeVehicle.z), -0.35)))
           : 0,
       firstPerson: this.cameraCtrl.firstPerson,

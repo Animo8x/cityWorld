@@ -17,6 +17,7 @@ import {
   Smartphone,
   Backpack,
   Eye,
+  Plane,
 } from 'lucide-react';
 import { HudSnapshot } from '../game/types';
 import { ROAD_SEGMENTS } from '../game/world/worldLayout';
@@ -35,6 +36,7 @@ interface GameHUDProps {
   onToggleMute: () => void;
   onCycleWeapon: () => void;
   onToggleCamera: () => void;
+  onToggleWings: () => void;
 }
 
 /** Smoothly interpolates vehicle health color from pure white (100%) -> orange (45%) -> crimson red (0%) */
@@ -106,9 +108,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onToggleMute,
   onCycleWeapon,
   onToggleCamera,
+  onToggleWings,
 }) => {
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const t = getText(hud.language);
+
+  const skyWaypointDist =
+    (hud.isAirplane || hud.canDeployWings) && hud.customWaypoint
+      ? Math.round(Math.hypot(hud.customWaypoint.x - hud.playerPos.x, hud.customWaypoint.z - hud.playerPos.z))
+      : null;
+  const skyTargetIsAuroria = Boolean(hud.customWaypoint && hud.customWaypoint.x >= 720);
 
   const mapRadius = 175;
   const px = hud.playerPos.x;
@@ -162,6 +171,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <Eye className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">{hud.firstPerson ? t.firstPersonView : t.thirdPersonView}</span>
         </button>
+
+        {hud.canDeployWings && !compactMobile && (
+          <button
+            onClick={onToggleWings}
+            className={`flex items-center gap-1 rounded-lg border font-black cursor-pointer shadow-lg px-2.5 py-1.5 text-[10px] md:text-xs ${
+              hud.wingsDeployed
+                ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 border-yellow-200'
+                : 'bg-slate-900/90 hover:bg-slate-800 text-amber-300 border-amber-500/60'
+            }`}
+            title="Deploy / Fold Flight Wings (X)"
+          >
+            <Plane className="w-3.5 h-3.5" />
+            <span>{hud.wingsDeployed ? t.wingsFlying : t.wingsDeploy} (X)</span>
+          </button>
+        )}
 
         {compactMobile && (
           <>
@@ -370,6 +394,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div className="hidden sm:flex flex-col items-center gap-1.5 max-w-[44vw] md:max-w-md text-center">
             {touchEnabled && renderUtilityButtons(true)}
 
+            {skyWaypointDist !== null && (
+              <div className="bg-slate-950/90 border border-yellow-400/75 px-3 py-1 rounded-md shadow-lg text-[11px] font-black text-yellow-300 flex items-center gap-1.5">
+                <Plane className="w-3.5 h-3.5 text-cyan-400" />
+                <span>
+                  {skyTargetIsAuroria
+                    ? hud.language === 'ar'
+                      ? `بلد الأثرياء (أوروريا) · ${skyWaypointDist}م ✈`
+                      : `Auroria Rich Country · ${skyWaypointDist}m ✈`
+                    : hud.language === 'ar'
+                      ? `الوجهة الجوية · ${skyWaypointDist}م ✈`
+                      : `Flight Target · ${skyWaypointDist}m ✈`}
+                </span>
+              </div>
+            )}
+
             {hud.activeMission && (
               <div className="bg-slate-950/90 border border-sky-500/60 px-3 py-1.5 rounded-lg shadow-lg">
                 <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] md:text-xs font-bold uppercase tracking-wider text-sky-400">
@@ -564,13 +603,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div className="flex items-end justify-between gap-2 md:gap-4">
           {/* Bottom-Left: Minimal Controls Reminder (desktop only) */}
           <div className="hidden lg:block text-[11px] font-medium text-slate-300 bg-slate-950/80 border border-slate-800 px-3 py-1.5 rounded-md">
-            {hud.isAirplane
-              ? 'W/S Throttle · A/D Turn · Space Climb · Shift Descend · C Camera · F Exit'
-              : hud.inVehicle
-                ? 'W/S Drive · A/D Steer · Space Handbrake · C Camera · L Lights · F Exit'
-                : hud.isSwimming
-                  ? 'WASD Swim · C Camera · F Board Nearby Vehicle'
-                  : 'WASD Move · C Camera · V Punch · Click / G Shoot · 1-6 Weapon · F Steal · E Interact'}
+            {hud.canDeployWings
+              ? 'W/S Throttle · A/D Steer · X Wings · Space Climb · Shift Descend · C Camera · F Exit'
+              : hud.isAirplane
+                ? 'W/S Throttle · A/D Turn · Space Climb · Shift Descend · C Camera · F Exit'
+                : hud.inVehicle
+                  ? 'W/S Drive · A/D Steer · Space Handbrake · C Camera · L Lights · F Exit'
+                  : hud.isSwimming
+                    ? 'WASD Swim · C Camera · F Board Nearby Vehicle'
+                    : 'WASD Move · C Camera · V Punch · Click / G Shoot · 1-6 Weapon · F Steal · E Interact'}
           </div>
 
           {/* Bottom-Center: Contextual Prompt + Collapsible Compact Quick Dock */}

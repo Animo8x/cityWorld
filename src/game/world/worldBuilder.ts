@@ -6,6 +6,8 @@ import {
   INTERIOR_PORTALS,
   ISLAND_CENTER,
   MAINLAND_BORDER,
+  RICH_COUNTRY_BOUNDS,
+  RICH_COUNTRY_CENTER,
   ROAD_SEGMENTS,
   TRAFFIC_INTERSECTIONS,
   WATER_LEVEL,
@@ -59,10 +61,11 @@ export function buildCityWorld(
     return g;
   };
 
-  // 1. Procedural Terrain Mesh
-  const terrainSegs = isMobile ? 80 : 96;
-  const terrainGeo = new THREE.PlaneGeometry(2600, 2600, terrainSegs, terrainSegs);
+  // 1. Procedural Terrain Mesh (expanded & shifted east to cover Mainland + Island + Auroria Rich Country)
+  const terrainSegs = isMobile ? 90 : 112;
+  const terrainGeo = new THREE.PlaneGeometry(3000, 2600, terrainSegs, terrainSegs);
   terrainGeo.rotateX(-Math.PI / 2);
+  terrainGeo.translate(260, 0, 120);
   const posAttr = terrainGeo.attributes.position;
   const colors = new Float32Array(posAttr.count * 3);
   const _c = new THREE.Color();
@@ -74,7 +77,23 @@ export function buildCityWorld(
     posAttr.setY(i, h);
 
     const onIsland = Math.hypot((vx - ISLAND_CENTER.x) / 1.05, (vz - ISLAND_CENTER.z) / 1.15) < 110;
-    if (onIsland) {
+    const onAuroria =
+      vx >= RICH_COUNTRY_BOUNDS.minX - 16 &&
+      vx <= RICH_COUNTRY_BOUNDS.maxX + 16 &&
+      vz >= RICH_COUNTRY_BOUNDS.minZ - 16 &&
+      vz <= RICH_COUNTRY_BOUNDS.maxZ + 16;
+
+    if (onAuroria) {
+      if (vx >= 776 && vx <= 816 && vz >= -232 && vz <= -8) {
+        _c.setHex(0x334155);
+      } else if (h < 0.25) {
+        _c.setHex(0xf3e2b3);
+      } else if (vx >= 850 && vx <= 1160 && vz >= -312 && vz <= 70) {
+        _c.setHex(0x2d8a4e);
+      } else {
+        _c.setHex(0xf4ecd8);
+      }
+    } else if (onIsland) {
       if (Math.abs(vx - ISLAND_CENTER.x) <= 22 && vz >= 685 && vz <= 825) {
         _c.setHex(0x475569);
       } else if (h < 1.25) {
@@ -108,9 +127,9 @@ export function buildCityWorld(
   scene.add(terrainMesh);
   disposables.push(terrainGeo, terrainMat);
 
-  // 2. Animated Ocean Surface
+  // 2. Animated Ocean Surface (covers Southern Ocean + Eastern Strait around Auroria)
   const waterUniforms = { uTime: { value: 0 } };
-  const waterGeo = new THREE.PlaneGeometry(2800, 1400, isMobile ? 36 : 48, isMobile ? 24 : 32);
+  const waterGeo = new THREE.PlaneGeometry(3400, 2600, isMobile ? 42 : 54, isMobile ? 32 : 42);
   waterGeo.rotateX(-Math.PI / 2);
   const waterMat = new THREE.MeshStandardMaterial({
     color: 0x0e5a7a,
@@ -130,7 +149,7 @@ export function buildCityWorld(
       );
   };
   const waterMesh = new THREE.Mesh(waterGeo, waterMat);
-  waterMesh.position.set(0, WATER_LEVEL, 1020);
+  waterMesh.position.set(280, WATER_LEVEL, 260);
   waterMesh.receiveShadow = true;
   scene.add(waterMesh);
   disposables.push(waterGeo, waterMat);
@@ -155,8 +174,26 @@ export function buildCityWorld(
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
-  roadMaterials.push(cityRoadMat, hwyRoadMat);
-  disposables.push(cityRoadMat, hwyRoadMat);
+  const auroriaMarbleRoadMat = new THREE.MeshStandardMaterial({
+    color: 0xf1f5f9,
+    roughness: 0.32,
+    metalness: 0.14,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+  const auroriaGoldTrimMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    metalness: 0.9,
+    roughness: 0.18,
+    emissive: 0x78350f,
+    emissiveIntensity: 0.12,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  roadMaterials.push(cityRoadMat, hwyRoadMat, auroriaMarbleRoadMat);
+  disposables.push(cityRoadMat, hwyRoadMat, auroriaMarbleRoadMat, auroriaGoldTrimMat);
 
   const concreteMat = new THREE.MeshStandardMaterial({
     map: tex.sidewalkMap,
@@ -172,6 +209,7 @@ export function buildCityWorld(
     const angle = Math.atan2(dx, dz);
     const cx = (seg.x1 + seg.x2) / 2;
     const cz = (seg.z1 + seg.z2) / 2;
+    const isAuroriaRoad = seg.id.startsWith('aur_');
 
     const rGeo = new THREE.PlaneGeometry(seg.width, len);
     rGeo.rotateX(-Math.PI / 2);
@@ -179,14 +217,29 @@ export function buildCityWorld(
     for (let i = 0; i < uv.count; i++) {
       uv.setY(i, uv.getY(i) * (len / 24));
     }
-    const baseMat = seg.isHighway ? hwyRoadMat : cityRoadMat;
+    const baseMat = isAuroriaRoad ? auroriaMarbleRoadMat : seg.isHighway ? hwyRoadMat : cityRoadMat;
     const roadMesh = new THREE.Mesh(rGeo, baseMat);
-    const baseH = seg.z1 < -280 || seg.z2 < -280 ? groundHeightAt(cx, cz) + 0.06 : 0.04;
+    const baseH =
+      isAuroriaRoad || seg.z1 < -280 || seg.z2 < -280 ? groundHeightAt(cx, cz) + 0.05 : 0.04;
     roadMesh.position.set(cx, baseH, cz);
     roadMesh.rotation.y = angle;
     roadMesh.receiveShadow = true;
     scene.add(roadMesh);
     disposables.push(rGeo);
+
+    if (isAuroriaRoad) {
+      const curbGeo = new THREE.BoxGeometry(0.45, 0.18, len);
+      [-seg.width * 0.5 - 0.15, 0, seg.width * 0.5 + 0.15].forEach((offsetX, cIdx) => {
+        const trimMesh = new THREE.Mesh(curbGeo, auroriaGoldTrimMat);
+        const worldOx = cx + Math.cos(angle) * offsetX;
+        const worldOz = cz - Math.sin(angle) * offsetX;
+        trimMesh.position.set(worldOx, cIdx === 1 ? baseH + 0.02 : baseH + 0.06, worldOz);
+        trimMesh.rotation.y = angle;
+        if (cIdx === 1) trimMesh.scale.set(0.45, 0.25, 1);
+        scene.add(trimMesh);
+      });
+      disposables.push(curbGeo);
+    }
   }
 
   const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.78 });
@@ -1045,6 +1098,225 @@ export function buildCityWorld(
   borderGroup.add(buoyInst, postInst, capInst);
   scene.add(borderGroup);
 
+  // 12D. AURORIA ROYAL COUNTRY (Second Wealthy Country across the Eastern Sea: Gold Mansions, Clean Plazas & Golden Runway)
+  const auroriaGroup = new THREE.Group();
+  const aurGoldMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    metalness: 0.94,
+    roughness: 0.16,
+    emissive: 0x78350f,
+    emissiveIntensity: 0.14,
+  });
+  const aurRoseGoldMat = new THREE.MeshStandardMaterial({
+    color: 0xfbbf24,
+    metalness: 0.9,
+    roughness: 0.2,
+  });
+  const aurMarbleMat = new THREE.MeshStandardMaterial({
+    color: 0xfcfbf7,
+    roughness: 0.34,
+    metalness: 0.1,
+  });
+  const aurGoldBeaconMat = new THREE.MeshStandardMaterial({
+    color: 0xfef08a,
+    emissive: 0xfacc15,
+    emissiveIntensity: 2.3,
+  });
+  disposables.push(aurGoldMat, aurRoseGoldMat, aurMarbleMat, aurGoldBeaconMat);
+
+  // Clean Marble Sea Wall & Golden Promenade Deck around Auroria Island
+  const aurBaseY = 0.65;
+  const aurRunway = new THREE.Mesh(new THREE.PlaneGeometry(26, 210), runwayMat);
+  aurRunway.rotation.x = -Math.PI / 2;
+  aurRunway.position.set(795, aurBaseY + 0.06, -120);
+  aurRunway.receiveShadow = true;
+  auroriaGroup.add(aurRunway);
+
+  // Runway 24K Gold Runway Edge Strips & Beacons
+  [-13.4, 13.4].forEach((rxOff) => {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 212), aurGoldMat);
+    strip.position.set(795 + rxOff, aurBaseY + 0.08, -120);
+    auroriaGroup.add(strip);
+  });
+  const aurBeaconInst = new THREE.InstancedMesh(beaconGeo, aurGoldBeaconMat, 16);
+  let aurBIdx = 0;
+  for (let bz = -216; bz <= -24; bz += 27.4) {
+    [-14.4, 14.4].forEach((bxOff) => {
+      if (aurBIdx >= 16) return;
+      dummyStatic.position.set(795 + bxOff, aurBaseY + 0.34, bz);
+      dummyStatic.rotation.set(0, 0, 0);
+      dummyStatic.scale.setScalar(1);
+      dummyStatic.updateMatrix();
+      aurBeaconInst.setMatrixAt(aurBIdx++, dummyStatic.matrix);
+    });
+  }
+  aurBeaconInst.instanceMatrix.needsUpdate = true;
+  aurBeaconInst.computeBoundingSphere();
+  auroriaGroup.add(aurBeaconInst);
+
+  // Auroria VIP Royal Jet Terminal Pavilion (north-west corner of airfield)
+  const termBase = new THREE.Mesh(new THREE.BoxGeometry(26, 9.5, 16), aurMarbleMat);
+  termBase.position.set(778, aurBaseY + 4.75, -266);
+  termBase.castShadow = true;
+  termBase.receiveShadow = true;
+  const termGlass = new THREE.Mesh(new THREE.BoxGeometry(26.3, 4.8, 16.3), nightWindowMat);
+  termGlass.position.set(778, aurBaseY + 5.0, -266);
+  const termRoof = new THREE.Mesh(new THREE.BoxGeometry(29, 0.9, 19), aurGoldMat);
+  termRoof.position.set(778, aurBaseY + 9.9, -266);
+  const termDome = new THREE.Mesh(new THREE.SphereGeometry(4.2, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), aurGoldMat);
+  termDome.position.set(778, aurBaseY + 10.3, -266);
+  auroriaGroup.add(termBase, termGlass, termRoof, termDome);
+  addBoxCollider(778, -266, 26, 16, aurBaseY + 14);
+
+  // Grand Central Triumph Arch & Emerald Fountain Plaza at (952, -180)
+  const plazaSlab = new THREE.Mesh(new THREE.BoxGeometry(58, 0.3, 58), aurMarbleMat);
+  plazaSlab.position.set(952, aurBaseY + 0.15, -180);
+  plazaSlab.receiveShadow = true;
+  const fRingOuter = new THREE.Mesh(new THREE.CylinderGeometry(10.5, 11.2, 0.95, 24), aurGoldMat);
+  fRingOuter.position.set(952, aurBaseY + 0.62, -180);
+  const fWaterPool = new THREE.Mesh(new THREE.CylinderGeometry(9.2, 9.2, 0.55, 24), poolMat);
+  fWaterPool.position.set(952, aurBaseY + 0.95, -180);
+  const fPillar = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.8, 11.5, 12), aurMarbleMat);
+  fPillar.position.set(952, aurBaseY + 6.0, -180);
+  fPillar.castShadow = true;
+  const fCrownOrb = new THREE.Mesh(new THREE.OctahedronGeometry(2.2, 0), aurGoldMat);
+  fCrownOrb.position.set(952, aurBaseY + 13.2, -180);
+  auroriaGroup.add(plazaSlab, fRingOuter, fWaterPool, fPillar, fCrownOrb);
+  addBoxCollider(952, -180, 18, 18, aurBaseY + 15);
+
+  // 4 Golden Corner Triumph Pillars around Fountain Plaza
+  [
+    [-21, -21],
+    [21, -21],
+    [-21, 21],
+    [21, 21],
+  ].forEach(([ox, oz]) => {
+    const obeliskBase = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.2, 2.8), aurMarbleMat);
+    obeliskBase.position.set(952 + ox, aurBaseY + 0.75, -180 + oz);
+    const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.95, 7.2, 6), aurGoldMat);
+    obelisk.position.set(952 + ox, aurBaseY + 4.8, -180 + oz);
+    obelisk.castShadow = true;
+    auroriaGroup.add(obeliskBase, obelisk);
+    addBoxCollider(952 + ox, -180 + oz, 2.8, 2.8, aurBaseY + 9);
+  });
+
+  // Auroria Country Golden Archway Gate flanking Main Royal Avenue at x=856, z=-120
+  [-9.8, 9.8].forEach((gzOff) => {
+    const gCol = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.25, 11.5, 12), aurMarbleMat);
+    gCol.position.set(856, aurBaseY + 5.75, -120 + gzOff);
+    gCol.castShadow = true;
+    const gCap = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.1, 1.4, 12), aurGoldMat);
+    gCap.position.set(856, aurBaseY + 11.8, -120 + gzOff);
+    auroriaGroup.add(gCol, gCap);
+    addBoxCollider(856, -120 + gzOff, 2.5, 2.5, aurBaseY + 13);
+  });
+  const archSpan = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.0, 22), aurGoldMat);
+  archSpan.position.set(856, aurBaseY + 12.2, -120);
+  archSpan.castShadow = true;
+  const archCrest = new THREE.Mesh(new THREE.OctahedronGeometry(1.6, 0), aurGoldBeaconMat);
+  archCrest.position.set(856, aurBaseY + 14.3, -120);
+  auroriaGroup.add(archSpan, archCrest);
+
+  // Crown embellishment on the owned Royal Auroria Palace (house_auroria_palace at 952, -262.5)
+  const palaceDome = new THREE.Mesh(
+    new THREE.SphereGeometry(3.8, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5),
+    aurGoldMat
+  );
+  palaceDome.position.set(952, aurBaseY + 12.2, -262.5);
+  const palaceLawn = new THREE.Mesh(new THREE.BoxGeometry(40, 0.24, 24), aurMarbleMat);
+  palaceLawn.position.set(952, aurBaseY + 0.12, -262.5);
+  auroriaGroup.add(palaceDome, palaceLawn);
+
+  // 5 Grand Luxury Gold & White Marble Mansions across Auroria's clean billionaire estates
+  const richVillas: Array<{ x: number; z: number; w: number; d: number; hasPool: boolean }> = [
+    { x: 1072, z: -278, w: 28, d: 18, hasPool: true },
+    { x: 1072, z: -180, w: 30, d: 20, hasPool: true },
+    { x: 952, z: -60, w: 28, d: 18, hasPool: true },
+    { x: 1072, z: -60, w: 30, d: 20, hasPool: true },
+    { x: 952, z: 42, w: 26, d: 16, hasPool: false },
+    { x: 1072, z: 42, w: 26, d: 16, hasPool: false },
+  ];
+  richVillas.forEach((rv, rIdx) => {
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(rv.w + 14, 0.24, rv.d + 14), aurMarbleMat);
+    apron.position.set(rv.x, aurBaseY + 0.12, rv.z);
+    apron.receiveShadow = true;
+
+    const wing1 = new THREE.Mesh(new THREE.BoxGeometry(rv.w, 6.2, rv.d), aurMarbleMat);
+    wing1.position.set(rv.x, aurBaseY + 3.1, rv.z);
+    wing1.castShadow = true;
+    wing1.receiveShadow = true;
+
+    const win1 = new THREE.Mesh(new THREE.BoxGeometry(rv.w + 0.35, 2.2, rv.d + 0.35), nightWindowMat);
+    win1.position.set(rv.x, aurBaseY + 3.4, rv.z);
+
+    const goldCornice = new THREE.Mesh(new THREE.BoxGeometry(rv.w + 1.8, 0.75, rv.d + 1.8), aurGoldMat);
+    goldCornice.position.set(rv.x, aurBaseY + 6.45, rv.z);
+
+    const wing2 = new THREE.Mesh(new THREE.BoxGeometry(rv.w * 0.68, 5.0, rv.d * 0.72), aurMarbleMat);
+    wing2.position.set(rv.x - (rIdx % 2 === 0 ? 1.5 : -1.5), aurBaseY + 9.2, rv.z);
+    wing2.castShadow = true;
+
+    const win2 = new THREE.Mesh(new THREE.BoxGeometry(rv.w * 0.68 + 0.3, 1.8, rv.d * 0.72 + 0.3), nightWindowMat);
+    win2.position.set(wing2.position.x, aurBaseY + 9.4, rv.z);
+
+    const topRoofGold = new THREE.Mesh(new THREE.BoxGeometry(rv.w * 0.74, 0.6, rv.d * 0.78), aurGoldMat);
+    topRoofGold.position.set(wing2.position.x, aurBaseY + 12.0, rv.z);
+
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(2.8, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      aurGoldMat
+    );
+    dome.position.set(wing2.position.x, aurBaseY + 12.25, rv.z);
+
+    auroriaGroup.add(apron, wing1, win1, goldCornice, wing2, win2, topRoofGold, dome);
+
+    // twin gold entry columns on front veranda
+    [-rv.w * 0.24, rv.w * 0.24].forEach((cxOff) => {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.48, 6.2, 10), aurGoldMat);
+      col.position.set(rv.x + cxOff, aurBaseY + 3.1, rv.z + rv.d * 0.5 + 0.8);
+      auroriaGroup.add(col);
+    });
+
+    if (rv.hasPool) {
+      const poolBorder = new THREE.Mesh(new THREE.BoxGeometry(12.8, 0.34, 7.6), aurGoldMat);
+      poolBorder.position.set(rv.x, aurBaseY + 0.17, rv.z + rv.d * 0.5 + 5.8);
+      const vPool = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.42, 6.4), poolMat);
+      vPool.position.set(rv.x, aurBaseY + 0.22, rv.z + rv.d * 0.5 + 5.8);
+      auroriaGroup.add(poolBorder, vPool);
+    }
+
+    addBoxCollider(rv.x, rv.z, rv.w, rv.d, aurBaseY + 14);
+  });
+
+  // Auroria 24K Gold Boulevards Streetlamps (batched 2 InstancedMeshes!)
+  const aurLampCoords: Array<[number, number]> = [];
+  for (let az = -260; az <= 30; az += 48) {
+    aurLampCoords.push([881, az], [1005, az], [1025, az], [1139, az]);
+  }
+  const aurPoleGeo = new THREE.CylinderGeometry(0.12, 0.18, 6.4, 8);
+  aurPoleGeo.translate(0, 3.2, 0);
+  const aurBulbGeo = new THREE.SphereGeometry(0.42, 8, 6);
+  aurBulbGeo.translate(0, 6.55, 0);
+  disposables.push(aurPoleGeo, aurBulbGeo);
+
+  const aurPolesInst = new THREE.InstancedMesh(aurPoleGeo, aurGoldMat, aurLampCoords.length);
+  const aurBulbsInst = new THREE.InstancedMesh(aurBulbGeo, streetLampBulbsMat, aurLampCoords.length);
+  aurLampCoords.forEach(([lx, lz], i) => {
+    dummyStatic.position.set(lx, aurBaseY, lz);
+    dummyStatic.rotation.set(0, 0, 0);
+    dummyStatic.scale.setScalar(1);
+    dummyStatic.updateMatrix();
+    aurPolesInst.setMatrixAt(i, dummyStatic.matrix);
+    aurBulbsInst.setMatrixAt(i, dummyStatic.matrix);
+  });
+  aurPolesInst.instanceMatrix.needsUpdate = true;
+  aurBulbsInst.instanceMatrix.needsUpdate = true;
+  aurPolesInst.computeBoundingSphere();
+  aurBulbsInst.computeBoundingSphere();
+  auroriaGroup.add(aurPolesInst, aurBulbsInst);
+
+  scene.add(auroriaGroup);
+
   // 13. INSTANCED TREES & STREETLAMPS & TRAFFIC LIGHTS
   const treePositions: Array<{ x: number; y: number; z: number; scale: number; palm: boolean }> = [];
   for (let i = 0; i < 160; i++) {
@@ -1075,6 +1347,31 @@ export function buildCityWorld(
     if (Math.abs(tx - -240) < 12 || Math.abs(tx - 40) < 12 || Math.abs(tz - -460) < 12) continue;
     const ty = groundHeightAt(tx, tz);
     treePositions.push({ x: tx, y: ty, z: tz, scale: 0.9 + rand() * 0.5, palm: false });
+  }
+  // Auroria Rich Country Manicured Palm & Emerald Cypress Trees
+  for (let i = 0; i < 54; i++) {
+    const tx = 845 + rand() * 315;
+    const tz = -315 + rand() * 390;
+    if (
+      Math.abs(tx - 890) < 11 ||
+      Math.abs(tx - 1015) < 12 ||
+      Math.abs(tx - 1130) < 11 ||
+      Math.abs(tz - -240) < 11 ||
+      Math.abs(tz - -120) < 12 ||
+      Math.abs(tz - 0) < 11 ||
+      Math.hypot(tx - 952, tz - -180) < 34 ||
+      (Math.abs(tx - 952) < 24 && Math.abs(tz - -262.5) < 16) ||
+      richVillas.some((rv) => Math.abs(tx - rv.x) < rv.w * 0.68 && Math.abs(tz - rv.z) < rv.d * 0.78)
+    ) {
+      continue;
+    }
+    treePositions.push({
+      x: tx,
+      y: groundHeightAt(tx, tz),
+      z: tz,
+      scale: 0.95 + rand() * 0.35,
+      palm: i % 2 === 0,
+    });
   }
 
   const trunkGeo = new THREE.CylinderGeometry(0.25, 0.38, 3.4, 7);
@@ -1227,6 +1524,7 @@ export function buildCityWorld(
   freezeStatic(terrainMesh);
   freezeStatic(waterMesh);
   freezeStatic(islandGroup);
+  freezeStatic(auroriaGroup);
   freezeStatic(borderGroup);
   freezeStatic(trunksInst);
   freezeStatic(crownsInst);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ZoomIn, ZoomOut, Navigation, Car, Crosshair, Sparkles, ShoppingBag, Home } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Navigation, Car, Crosshair, Sparkles, ShoppingBag, Home, Plane, Crown } from 'lucide-react';
 import { HudSnapshot } from '../game/types';
 import { DISTRICTS, INTERIOR_PORTALS, ROAD_SEGMENTS } from '../game/world/worldLayout';
 import { getText } from '../i18n/translations';
@@ -15,19 +15,19 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
   const t = getText(hud.language);
   const isRtl = hud.language === 'ar';
 
-  // World coordinate space covering mainland + southern Palm Cove Island:
-  // x: [-740..740] (span 1480), z: [-580..900] (span 1480) -> SVG [0..800]
+  // World coordinate space covering Mainland + southern Palm Cove Island + eastern Auroria Rich Country:
+  // x: [-680..1300] (span 1980), z: [-640..1340] (span 1980) -> SVG [0..800]
   const toSvg = (wx: number, wz: number) => ({
-    x: ((wx + 740) / 1480) * 800,
-    y: ((wz + 580) / 1480) * 800,
+    x: ((wx + 680) / 1980) * 800,
+    y: ((wz + 640) / 1980) * 800,
   });
 
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width;
     const ny = (e.clientY - rect.top) / rect.height;
-    const wx = Math.round(nx * 1480 - 740);
-    const wz = Math.round(ny * 1480 - 580);
+    const wx = Math.round(nx * 1980 - 680);
+    const wz = Math.round(ny * 1980 - 640);
     onSetWaypoint({ x: wx, z: wz });
   };
 
@@ -81,6 +81,20 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
         {/* Quick GPS Destinations Strip */}
         <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center gap-2 overflow-x-auto">
           <span className="text-[11px] font-bold text-slate-400 shrink-0">{t.quickGps}</span>
+          <button
+            onClick={() => onSetWaypoint({ x: 805, z: -120 })}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-black shrink-0 cursor-pointer border bg-yellow-500/25 border-yellow-400 text-yellow-200 hover:bg-yellow-500/40"
+          >
+            <Crown className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'بلد الأثرياء (أوروريا)' : 'Auroria Rich Country'}</span>
+          </button>
+          <button
+            onClick={() => onSetWaypoint({ x: 355, z: -310 })}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-extrabold shrink-0 cursor-pointer border bg-cyan-500/20 border-cyan-400/70 text-cyan-200 hover:bg-cyan-500/35"
+          >
+            <Plane className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'المطار الدولي' : 'Skyline Airport'}</span>
+          </button>
           {INTERIOR_PORTALS.filter(
             (p) =>
               p.kind === 'dealership' ||
@@ -138,11 +152,12 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
               onClick={handleSvgClick}
               className="w-full h-full cursor-crosshair bg-[#29432d]"
             >
-              {/* Ocean South + World Sea Border */}
-              <rect x={0} y={toSvg(0, 345).y} width={800} height={500} fill="#0c4a6e" opacity={0.92} />
+              {/* Ocean South + Eastern Strait Ocean */}
+              <rect x={0} y={toSvg(0, 345).y} width={800} height={800} fill="#0c4a6e" opacity={0.94} />
+              <rect x={toSvg(536, 0).x} y={0} width={800} height={800} fill="#0c4a6e" opacity={0.94} />
 
-              {/* Districts (Mainland & Island) */}
-              {DISTRICTS.filter((d) => d.id !== 'highway' && d.id !== 'island').map((d) => {
+              {/* Districts (Mainland) */}
+              {DISTRICTS.filter((d) => d.id !== 'highway' && d.id !== 'island' && d.id !== 'rich_country').map((d) => {
                 const tl = toSvg(d.bounds.minX, d.bounds.minZ);
                 const br = toSvg(d.bounds.maxX, d.bounds.maxZ);
                 return (
@@ -153,7 +168,7 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
                       width={br.x - tl.x}
                       height={br.y - tl.y}
                       fill={d.mapColor}
-                      opacity={0.75}
+                      opacity={0.78}
                       stroke="#1e293b"
                       strokeWidth={1}
                     />
@@ -161,12 +176,57 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
                 );
               })}
 
+              {/* Auroria Royal Country (24K Gold Wealthy Country across the Eastern Sea) */}
+              {(() => {
+                const atl = toSvg(730, -350);
+                const abr = toSvg(1190, 110);
+                const arw1 = toSvg(782, -225);
+                const arw2 = toSvg(808, -15);
+                const flightHighlighted = hud.isAirplane || hud.canDeployWings;
+                return (
+                  <g>
+                    <rect
+                      x={atl.x}
+                      y={atl.y}
+                      width={abr.x - atl.x}
+                      height={abr.y - atl.y}
+                      rx={14}
+                      fill="#15803d"
+                      opacity={0.9}
+                      stroke="#facc15"
+                      strokeWidth={flightHighlighted ? 4 : 2.5}
+                    />
+                    <rect
+                      x={atl.x + 6}
+                      y={atl.y + 6}
+                      width={abr.x - atl.x - 12}
+                      height={abr.y - atl.y - 12}
+                      rx={10}
+                      fill="none"
+                      stroke="#fde047"
+                      strokeWidth={1.2}
+                      strokeDasharray={flightHighlighted ? '6 3' : undefined}
+                      opacity={0.85}
+                    />
+                    <rect
+                      x={arw1.x}
+                      y={arw1.y}
+                      width={Math.max(8, arw2.x - arw1.x)}
+                      height={arw2.y - arw1.y}
+                      fill="#1e293b"
+                      stroke="#facc15"
+                      strokeWidth={1.6}
+                    />
+                  </g>
+                );
+              })()}
+
               {/* Palm Cove Island sandy landmass & Airstrip */}
               <ellipse
                 cx={toSvg(-180, 760).x}
                 cy={toSvg(-180, 760).y}
-                rx={64}
-                ry={52}
+                rx={48}
+                ry={39}
                 fill="#eab308"
                 opacity={0.85}
                 stroke="#fde047"
@@ -175,15 +235,15 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
               <ellipse
                 cx={toSvg(-180, 760).x}
                 cy={toSvg(-180, 760).y}
-                rx={46}
-                ry={36}
+                rx={34}
+                ry={27}
                 fill="#22c55e"
                 opacity={0.45}
               />
               <rect
-                x={toSvg(-180, 686).x - 8}
+                x={toSvg(-180, 686).x - 6}
                 y={toSvg(-180, 686).y}
-                width={16}
+                width={12}
                 height={toSvg(-180, 822).y - toSvg(-180, 686).y}
                 fill="#1e293b"
                 stroke="#38bdf8"
@@ -207,8 +267,8 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
               <rect
                 x={toSvg(235, -330).x}
                 y={toSvg(235, -330).y}
-                width={130}
-                height={22}
+                width={toSvg(475, -330).x - toSvg(235, -330).x}
+                height={16}
                 fill="#1e293b"
                 stroke="#e2e8f0"
                 strokeDasharray="6 4"
@@ -218,6 +278,7 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
               {ROAD_SEGMENTS.map((seg) => {
                 const p1 = toSvg(seg.x1, seg.z1);
                 const p2 = toSvg(seg.x2, seg.z2);
+                const isAur = seg.id.startsWith('aur_');
                 return (
                   <line
                     key={seg.id}
@@ -225,8 +286,8 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
                     y1={p1.y}
                     x2={p2.x}
                     y2={p2.y}
-                    stroke={seg.isHighway ? '#f59e0b' : '#64748b'}
-                    strokeWidth={seg.isHighway ? 6 : 4}
+                    stroke={isAur ? '#fde047' : seg.isHighway ? '#f59e0b' : '#64748b'}
+                    strokeWidth={seg.isHighway ? 5 : 3.4}
                     strokeLinecap="round"
                   />
                 );

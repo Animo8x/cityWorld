@@ -16,7 +16,15 @@ export type PlayerSkinId =
   | 'tactical_stealth'
   | 'emerald_vip'
   | 'royal_cyber'
-  | 'pure_gold';
+  | 'pure_gold'
+  | 'meme_banana_suit'
+  | 'meme_frog_suit'
+  | 'meme_duck_suit'
+  | 'meme_derp_suit'
+  | 'meme_chicken_suit'
+  | 'meme_shark_suit'
+  | 'meme_toast_suit'
+  | 'meme_alien_suit';
 
 export interface PlayerSkinDef {
   id: PlayerSkinId;
@@ -34,6 +42,7 @@ export interface PlayerSkinDef {
   emissive?: number;
   emissiveIntensity?: number;
   swatchHex: string;
+  isMeme?: boolean;
 }
 
 export interface GpsPoint {
@@ -52,7 +61,8 @@ export type DistrictId =
   | 'port'
   | 'countryside'
   | 'highway'
-  | 'island';
+  | 'island'
+  | 'rich_country';
 
 export interface DistrictInfo {
   id: DistrictId;
@@ -90,6 +100,9 @@ export type VehicleClassId =
   | 'speed_bicycle'
   | 'police'
   | 'airplane'
+  | 'gold_wing_coupe'
+  | 'gold_wing_hyper'
+  | 'gold_wing_sovereign'
   | 'meme_banana'
   | 'meme_head'
   | 'meme_toilet'
@@ -119,6 +132,7 @@ export interface VehicleSpec {
   wheelRadius: number;
   colors: number[];
   price: number;
+  canFly?: boolean;
 }
 
 export type WeatherType = 'clear' | 'cloudy' | 'rain' | 'fog';
@@ -219,6 +233,8 @@ export interface HudSnapshot {
   weather: WeatherType;
   inVehicle: boolean;
   isAirplane: boolean;
+  canDeployWings: boolean;
+  wingsDeployed: boolean;
   altitude: number;
   firstPerson: boolean;
   vehicleName: string;

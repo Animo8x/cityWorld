@@ -5,6 +5,7 @@ import {
   groundHeightAt,
   MAINLAND_BORDER,
   resolveCircleColliders,
+  RICH_COUNTRY_BOUNDS,
   ROAD_SEGMENTS,
   WATER_LEVEL,
 } from '../world/worldLayout';
@@ -34,6 +35,9 @@ export interface WorldVehicle {
   occupiedByPlayer: boolean;
   braking: boolean;
   drifting: boolean;
+  wingsDeployed: boolean;
+  wingProgress: number;
+  crashCooldown: number;
 }
 
 export interface CollidableVehicle {
@@ -57,6 +61,14 @@ export function isBicycleClass(cls: VehicleClassId): boolean {
 
 export function isAirplaneClass(cls: VehicleClassId): boolean {
   return cls === 'airplane';
+}
+
+export function isFlyingCarClass(cls: VehicleClassId): boolean {
+  return cls === 'gold_wing_coupe' || cls === 'gold_wing_hyper' || cls === 'gold_wing_sovereign';
+}
+
+export function canFlyVehicle(cls: VehicleClassId): boolean {
+  return isAirplaneClass(cls) || isFlyingCarClass(cls);
 }
 
 export function applyWorldPointDent(
@@ -256,7 +268,12 @@ export function findSafeVehicleSpawnNearPlayer(
   const isSpotSafe = (cx: number, cz: number, candHeading: number): boolean => {
     const onMainland = cx >= -530 && cx <= 530 && cz >= -530 && cz <= 530;
     const onIsland = cx >= -290 && cx <= -70 && cz >= 660 && cz <= 860;
-    if (!onMainland && !onIsland) return false;
+    const onRichCountry =
+      cx >= RICH_COUNTRY_BOUNDS.minX + 15 &&
+      cx <= RICH_COUNTRY_BOUNDS.maxX - 15 &&
+      cz >= RICH_COUNTRY_BOUNDS.minZ + 15 &&
+      cz <= RICH_COUNTRY_BOUNDS.maxZ - 15;
+    if (!onMainland && !onIsland && !onRichCountry) return false;
     const cy = groundHeightAt(cx, cz);
     if (cy < WATER_LEVEL + 0.3) return false;
     if (Math.abs(cy - py) > 3.5) return false;
@@ -338,6 +355,11 @@ export function resolveVehiclePairCollision(
   a: CollidableVehicle,
   b: CollidableVehicle
 ): { collided: boolean; contactX: number; contactZ: number; impactSpeed: number; dmgA: number; dmgB: number } {
+  // Ignore vehicles separated vertically (fixes mid-air airplanes colliding with ground cars below!)
+  if (Math.abs(a.y - b.y) > 4.2) {
+    return { collided: false, contactX: 0, contactZ: 0, impactSpeed: 0, dmgA: 0, dmgB: 0 };
+  }
+
   const offA = Math.max(0.25, a.length * 0.28);
   const offB = Math.max(0.25, b.length * 0.28);
   const radA = a.width * 0.5;
@@ -540,6 +562,9 @@ export class VehicleManager {
       occupiedByPlayer: false,
       braking: false,
       drifting: false,
+      wingsDeployed: false,
+      wingProgress: 0,
+      crashCooldown: 0,
     };
     this.vehicles.push(v);
     return v;
@@ -598,9 +623,17 @@ export class VehicleManager {
       { classId: 'nova_x', x: -18, z: -34, heading: Math.PI * 0.5 },
       { classId: 'nova_x', x: 300, z: -260, heading: -Math.PI * 0.5 },
       { classId: 'police', x: 52, z: -26, heading: Math.PI },
-      // Flyable Airplanes (1 at Skyline Airport Runway, 1 at Palm Cove Island for return flight)
+      // Golden Flying Cars Showcase + Flyable Airplanes
+      { classId: 'gold_wing_coupe', x: 74, z: 108, heading: Math.PI },
+      { classId: 'gold_wing_hyper', x: -168, z: -130, heading: Math.PI * 0.5 },
+      { classId: 'gold_wing_sovereign', x: 245, z: -295, heading: Math.PI * 0.5 },
       { classId: 'airplane', x: 262, z: -310, heading: Math.PI * 0.5 },
       { classId: 'airplane', x: -180, z: 730, heading: Math.PI },
+      // Auroria Rich Country Return Fleet (Golden Runway & Mansion Estates)
+      { classId: 'airplane', x: 795, z: -195, heading: 0 },
+      { classId: 'gold_wing_sovereign', x: 830, z: -140, heading: -Math.PI * 0.5 },
+      { classId: 'gold_wing_hyper', x: 1015, z: -188, heading: Math.PI * 0.5 },
+      { classId: 'gold_wing_coupe', x: 912, z: -15, heading: 0 },
     ];
 
     spawns.forEach((s, i) => {
@@ -684,13 +717,42 @@ export class VehicleManager {
       const spec = v.rig.spec;
       const isBike = isBicycleClass(v.classId);
       const isPlane = isAirplaneClass(v.classId);
+      const isFlyingCar = isFlyingCarClass(v.classId);
       const terrainFloorNow = groundHeightAt(v.x, v.z);
-      const isAirborne = isPlane && v.y > terrainFloorNow + 0.45;
+      if (v.crashCooldown > 0) v.crashCooldown = Math.max(0, v.crashCooldown - dt);
+
+      // Animate deployable 24K golden wings + jet thruster glow on flying cars
+      if (isFlyingCar) {
+        const targetWing = v.wingsDeployed && !v.exploded ? 1 : 0;
+        v.wingProgress = THREE.MathUtils.damp(v.wingProgress, targetWing, 7.5, dt);
+        const foldAngle = 1.48 * (1 - v.wingProgress);
+        if (v.rig.wingLeftPivot) {
+          v.rig.wingLeftPivot.rotation.y = foldAngle;
+          v.rig.wingLeftPivot.rotation.z = -v.wingProgress * 0.07;
+        }
+        if (v.rig.wingRightPivot) {
+          v.rig.wingRightPivot.rotation.y = -foldAngle;
+          v.rig.wingRightPivot.rotation.z = v.wingProgress * 0.07;
+        }
+        if (v.rig.thrusterGlowMat) {
+          v.rig.thrusterGlowMat.emissiveIntensity =
+            v.exploded ? 0 : 1.1 + v.wingProgress * 2.2 + (v === activeVehicle ? Math.abs(v.forwardSpeed) * 0.025 : 0);
+        }
+      }
+
+      const canFlyMode = isPlane || (isFlyingCar && (v.wingsDeployed || v.y > terrainFloorNow + 0.55));
+      const isAirborne = canFlyMode && v.y > terrainFloorNow + 0.45;
 
       if (v === activeVehicle && !v.exploded) {
+        const climbInput = input.climb ?? (input.handbrake ? 1 : 0);
+        // Auto-deploy wings when player holds Climb while speeding in a Golden Flying Car
+        if (isFlyingCar && !v.wingsDeployed && climbInput > 0.1 && Math.abs(v.forwardSpeed) > 16) {
+          v.wingsDeployed = true;
+        }
+
         const accel = input.throttle > 0 ? spec.acceleration : spec.braking;
-        const targetSteer = input.steer * (isPlane ? 0.62 : 0.54);
-        v.steerAngle = THREE.MathUtils.damp(v.steerAngle, targetSteer, isPlane ? 7 : 10, dt);
+        const targetSteer = input.steer * (canFlyMode ? 0.64 : 0.54);
+        v.steerAngle = THREE.MathUtils.damp(v.steerAngle, targetSteer, canFlyMode ? 7 : 10, dt);
 
         const fwdX = Math.sin(v.heading);
         const fwdZ = Math.cos(v.heading);
@@ -711,32 +773,32 @@ export class VehicleManager {
             fSpeed += input.throttle * spec.acceleration * 0.65 * dt;
           }
         } else {
-          fSpeed = THREE.MathUtils.damp(fSpeed, isAirborne ? 32 : 0, isPlane ? 0.45 : isBike ? 1.8 : 1.35, dt);
+          fSpeed = THREE.MathUtils.damp(fSpeed, isAirborne ? 34 : 0, canFlyMode ? 0.45 : isBike ? 1.8 : 1.35, dt);
         }
 
-        if (input.handbrake && !isPlane) {
+        if (input.handbrake && !canFlyMode) {
           fSpeed = THREE.MathUtils.damp(fSpeed, 0, 2.8, dt);
           v.braking = true;
         }
 
         fSpeed = THREE.MathUtils.clamp(fSpeed, isPlane ? -8 : -spec.reverseSpeed, spec.maxSpeed);
 
-        const speedFactor = isPlane
+        const speedFactor = canFlyMode
           ? Math.max(0.35, Math.min(1, Math.abs(fSpeed) / 14))
           : Math.min(1, Math.abs(fSpeed) / (isBike ? 2.5 : 6.5));
         const dirSign = fSpeed >= -0.2 ? 1 : -1;
         const turnRate =
-          v.steerAngle * spec.steeringSpeed * speedFactor * dirSign * (!isPlane && input.handbrake ? 1.35 : 1.0);
+          v.steerAngle * spec.steeringSpeed * speedFactor * dirSign * (!canFlyMode && input.handbrake ? 1.35 : 1.0);
         v.heading += turnRate * dt;
 
-        const gripLambda = isPlane
+        const gripLambda = canFlyMode
           ? 5.5
           : input.handbrake
             ? 2.2 * rainGripFactor
             : (1 - spec.driftGrip) * 65 * rainGripFactor + 3.5;
         latSpeed = THREE.MathUtils.damp(latSpeed, 0, gripLambda, dt);
 
-        v.drifting = !isBike && !isPlane && (Math.abs(latSpeed) > 3.8 || (input.handbrake && Math.abs(fSpeed) > 8));
+        v.drifting = !isBike && !canFlyMode && (Math.abs(latSpeed) > 3.8 || (input.handbrake && Math.abs(fSpeed) > 8));
 
         const newFwdX = Math.sin(v.heading);
         const newFwdZ = Math.cos(v.heading);
@@ -748,22 +810,20 @@ export class VehicleManager {
         v.forwardSpeed = fSpeed;
         v.pedalPhase += Math.abs(fSpeed) * dt * 1.45;
 
-        // Airplane vertical takeoff, climb (Space / climb > 0), and descent (Shift / climb < 0)
-        if (isPlane) {
-          const climbInput = input.climb ?? (input.handbrake ? 1 : 0);
-          if (fSpeed > 18) {
+        // Flight lift, climb (Space / climb > 0), and descent (Shift / climb < 0)
+        if (canFlyMode) {
+          const liftThreshold = isFlyingCar ? 15 : 18;
+          if (fSpeed > liftThreshold) {
             if (climbInput > 0.1) {
-              v.vy = THREE.MathUtils.damp(v.vy, 16, 4.5, dt);
+              v.vy = THREE.MathUtils.damp(v.vy, 17, 4.5, dt);
             } else if (climbInput < -0.1) {
               v.vy = THREE.MathUtils.damp(v.vy, -14, 4.5, dt);
-            } else if (v.y <= terrainFloorNow + 0.25 && fSpeed > 38 && input.throttle > 0.2) {
-              // Gentle natural runway liftoff at high takeoff speed
-              v.vy = 6.5;
+            } else if (v.y <= terrainFloorNow + 0.25 && fSpeed > (isFlyingCar ? 42 : 38) && input.throttle > 0.2) {
+              v.vy = 6.8;
             } else if (v.y > terrainFloorNow + 0.35) {
-              v.vy = THREE.MathUtils.damp(v.vy, 0, 3.8, dt);
+              v.vy = THREE.MathUtils.damp(v.vy, 0, 4.0, dt);
             }
           } else if (v.y > terrainFloorNow + 0.2) {
-            // Glide down gently when slowing below stall speed
             v.vy = THREE.MathUtils.damp(v.vy, -6.5, 2.5, dt);
           }
 
@@ -792,8 +852,8 @@ export class VehicleManager {
           this.emitSmoke(rearX, v.y, rearZ, false);
         }
       } else {
-        v.vx = THREE.MathUtils.damp(v.vx, 0, isPlane ? 1.4 : 3.5, dt);
-        v.vz = THREE.MathUtils.damp(v.vz, 0, isPlane ? 1.4 : 3.5, dt);
+        v.vx = THREE.MathUtils.damp(v.vx, 0, canFlyMode ? 1.4 : 3.5, dt);
+        v.vz = THREE.MathUtils.damp(v.vz, 0, canFlyMode ? 1.4 : 3.5, dt);
         v.forwardSpeed = Math.hypot(v.vx, v.vz);
         v.pitch = THREE.MathUtils.damp(v.pitch, v.exploded && !isBike ? 0.06 : 0, 6, dt);
         if (!v.exploded) {
@@ -817,22 +877,24 @@ export class VehicleManager {
       const isResting =
         v !== activeVehicle &&
         !v.exploded &&
-        !isPlane &&
+        !canFlyMode &&
         Math.abs(v.vx) < 0.01 &&
         Math.abs(v.vz) < 0.01 &&
         Math.abs(v.vy) < 0.01 &&
         Math.abs(v.pitch) < 0.005 &&
-        Math.abs(v.roll) < 0.005;
+        Math.abs(v.roll) < 0.005 &&
+        (!isFlyingCar || Math.abs(v.wingProgress - (v.wingsDeployed ? 1 : 0)) < 0.005);
 
       if (!isResting) {
-        // World border limits: ground vehicles are locked strictly to Mainland [-MAINLAND_BORDER..MAINLAND_BORDER];
-        // Airplanes unlock outer ocean airspace to reach Palm Cove Island (-180, 760) & return!
+        // World border limits: ground vehicles stay within Mainland or Auroria;
+        // Airplanes & Winged Flying Cars unlock full airspace to travel between CityWorld, Island & Auroria Rich Country!
         const rawNextX = v.x + v.vx * dt;
         const rawNextZ = v.z + v.vz * dt;
-        const minX = isPlane ? -710 : -MAINLAND_BORDER;
-        const maxX = isPlane ? 710 : MAINLAND_BORDER;
-        const minZ = isPlane ? -600 : -MAINLAND_BORDER;
-        const maxZ = isPlane ? 960 : MAINLAND_BORDER;
+        const inRichCountryArea = v.x >= RICH_COUNTRY_BOUNDS.minX - 5 && v.x <= RICH_COUNTRY_BOUNDS.maxX + 5;
+        const minX = canFlyMode ? -720 : inRichCountryArea ? RICH_COUNTRY_BOUNDS.minX + 10 : -MAINLAND_BORDER;
+        const maxX = canFlyMode ? 1320 : inRichCountryArea ? RICH_COUNTRY_BOUNDS.maxX - 10 : MAINLAND_BORDER;
+        const minZ = canFlyMode ? -620 : inRichCountryArea ? RICH_COUNTRY_BOUNDS.minZ + 10 : -MAINLAND_BORDER;
+        const maxZ = canFlyMode ? 980 : inRichCountryArea ? RICH_COUNTRY_BOUNDS.maxZ - 10 : MAINLAND_BORDER;
         const nextX = THREE.MathUtils.clamp(rawNextX, minX, maxX);
         const nextZ = THREE.MathUtils.clamp(rawNextZ, minZ, maxZ);
 
@@ -853,16 +915,18 @@ export class VehicleManager {
             const hitDirZ = col.z - nextZ;
             const contactX = v.x - hitDirX * 2;
             const contactZ = v.z - hitDirZ * 2;
-            const sev = Math.min(0.95, (impactSpeed / 25) * (isBike ? 1.5 : 1.0));
+            const sev = Math.min(0.85, (impactSpeed / 28) * (isBike ? 1.5 : canFlyMode ? 0.45 : 1.0));
             applyWorldPointDent(v.rig, v.x, v.z, v.heading, contactX, contactZ, sev);
-            if (v === activeVehicle) {
-              onCollision(Math.min(1, impactSpeed / 26));
-              const dmg = computeSpeedDamage(impactSpeed, 1.0, isBike ? 3.2 : isPlane ? 0.65 : 1.0);
-              this.applyDamage(v, dmg, onVehicleExploded);
+            if (v === activeVehicle && v.crashCooldown <= 0) {
+              v.crashCooldown = canFlyMode ? 0.9 : 0.25;
+              onCollision(Math.min(1, impactSpeed / 28));
+              const rawDmg = computeSpeedDamage(impactSpeed, 1.0, isBike ? 3.2 : canFlyMode ? 0.35 : 1.0);
+              const safeDmg = canFlyMode ? Math.min(22, rawDmg) : rawDmg;
+              this.applyDamage(v, safeDmg, onVehicleExploded);
             }
           }
-          v.vx *= -0.25;
-          v.vz *= -0.25;
+          v.vx *= canFlyMode ? -0.35 : -0.25;
+          v.vz *= canFlyMode ? -0.35 : -0.25;
         }
         v.x = col.x;
         v.z = col.z;
@@ -874,12 +938,13 @@ export class VehicleManager {
           supportY = Math.max(terrainY, bridgeY);
         }
 
-        if (isPlane) {
+        if (canFlyMode) {
           if (v.y <= supportY) {
             v.y = supportY;
-            if (v.vy < -15 && v === activeVehicle) {
-              onCollision(Math.min(1, Math.abs(v.vy) / 22));
-              this.applyDamage(v, Math.round(Math.abs(v.vy) * 1.6), onVehicleExploded);
+            if (v.vy < -24 && v === activeVehicle && v.crashCooldown <= 0) {
+              v.crashCooldown = 0.85;
+              onCollision(Math.min(1, Math.abs(v.vy) / 28));
+              this.applyDamage(v, Math.min(32, Math.round(Math.abs(v.vy + 18) * 1.4)), onVehicleExploded);
             }
             v.vy = Math.max(0, v.vy);
           } else if (v !== activeVehicle && v.y > supportY + 0.05) {
@@ -901,7 +966,7 @@ export class VehicleManager {
           v.vy = 0;
         }
 
-        if (v.y < WATER_LEVEL - 0.5 && !isPlane) {
+        if (v.y < WATER_LEVEL - 0.5 && !canFlyMode) {
           v.vx *= 0.92;
           v.vz *= 0.92;
         }

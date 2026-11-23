@@ -12,6 +12,11 @@ export interface VehicleRig {
   wheelPivots: THREE.Group[];
   wheelSpinMeshes: THREE.Object3D[];
   propellerPivot?: THREE.Group;
+  wingLeftPivot?: THREE.Group;
+  wingRightPivot?: THREE.Group;
+  thrusterGlowMat?: THREE.MeshStandardMaterial;
+  npcLeftLegPivot?: THREE.Group;
+  npcRightLegPivot?: THREE.Group;
   headlightMeshes: THREE.Mesh[];
   taillightMeshes: THREE.Mesh[];
   leftSignalMesh: THREE.Mesh;
@@ -98,6 +103,76 @@ function getRimGeo(radius: number, width: number): THREE.CylinderGeometry {
   return geo;
 }
 
+// Shared NPC cyclist/motorcyclist geometry + materials so traffic bikes always have visible riders
+const npcRiderGeo = {
+  torso: new THREE.BoxGeometry(0.4, 0.5, 0.22),
+  head: new THREE.BoxGeometry(0.24, 0.24, 0.24),
+  helmet: new THREE.BoxGeometry(0.28, 0.14, 0.28),
+  arm: new THREE.BoxGeometry(0.12, 0.44, 0.12),
+  leg: new THREE.BoxGeometry(0.15, 0.56, 0.17),
+};
+const npcSkinMat = new THREE.MeshStandardMaterial({ color: 0xdfb18b, roughness: 0.7 });
+const npcPantsMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+const npcHelmetMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4, metalness: 0.3 });
+const npcJacketMats = [0xe11d48, 0x2563eb, 0x059669, 0xd97706, 0x7c3aed].map(
+  (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 })
+);
+let npcRiderColorCursor = 0;
+
+export function attachNpcRiderToRig(rig: VehicleRig, classId: VehicleClassId): void {
+  const isBike = classId === 'bicycle' || classId === 'speed_bicycle';
+  if (!isBike && classId !== 'motorcycle') return;
+
+  const riderGroup = new THREE.Group();
+  const jacketMat = npcJacketMats[npcRiderColorCursor++ % npcJacketMats.length];
+
+  const torsoPivot = new THREE.Group();
+  torsoPivot.position.set(0, isBike ? 0.66 : 0.72, isBike ? -0.14 : -0.22);
+  torsoPivot.rotation.x = isBike ? 0.44 : 0.34;
+
+  const torso = new THREE.Mesh(npcRiderGeo.torso, jacketMat);
+  torso.position.set(0, 0.24, 0);
+  torso.castShadow = true;
+
+  const head = new THREE.Mesh(npcRiderGeo.head, npcSkinMat);
+  head.position.set(0, 0.62, 0.04);
+
+  const helmet = new THREE.Mesh(npcRiderGeo.helmet, npcHelmetMat);
+  helmet.position.set(0, 0.72, 0.03);
+
+  const armL = new THREE.Mesh(npcRiderGeo.arm, jacketMat);
+  armL.position.set(-0.24, 0.34, 0.22);
+  armL.rotation.x = -1.15;
+
+  const armR = new THREE.Mesh(npcRiderGeo.arm, jacketMat);
+  armR.position.set(0.24, 0.34, 0.22);
+  armR.rotation.x = -1.15;
+
+  torsoPivot.add(torso, head, helmet, armL, armR);
+
+  const leftLegPivot = new THREE.Group();
+  leftLegPivot.position.set(-0.14, isBike ? 0.64 : 0.68, isBike ? -0.06 : -0.1);
+  const legL = new THREE.Mesh(npcRiderGeo.leg, npcPantsMat);
+  legL.position.set(0, -0.24, 0.04);
+  leftLegPivot.add(legL);
+
+  const rightLegPivot = new THREE.Group();
+  rightLegPivot.position.set(0.14, isBike ? 0.64 : 0.68, isBike ? -0.06 : -0.1);
+  const legR = new THREE.Mesh(npcRiderGeo.leg, npcPantsMat);
+  legR.position.set(0, -0.24, 0.04);
+  rightLegPivot.add(legR);
+
+  if (!isBike) {
+    leftLegPivot.rotation.set(-0.68, 0, -0.24);
+    rightLegPivot.rotation.set(-0.68, 0, 0.24);
+  }
+
+  riderGroup.add(torsoPivot, leftLegPivot, rightLegPivot);
+  rig.bodyGroup.add(riderGroup);
+  rig.npcLeftLegPivot = leftLegPivot;
+  rig.npcRightLegPivot = rightLegPivot;
+}
+
 export function buildVehicleMesh(
   classId: VehicleClassId,
   colorHex?: number,
@@ -169,6 +244,9 @@ export function buildVehicleMesh(
   const headlightMeshes: THREE.Mesh[] = [];
   const taillightMeshes: THREE.Mesh[] = [];
   let propellerPivot: THREE.Group | undefined;
+  let wingLeftPivot: THREE.Group | undefined;
+  let wingRightPivot: THREE.Group | undefined;
+  let thrusterGlowMat: THREE.MeshStandardMaterial | undefined;
   let lightbarRed: THREE.Mesh | undefined;
   let lightbarBlue: THREE.Mesh | undefined;
   let headlightSpot: THREE.SpotLight | undefined;
@@ -774,6 +852,258 @@ export function buildVehicleMesh(
         damage.charred = false;
         clearBulletHoles();
         paintMat.color.setHex(baseColor);
+        syncVisualDent();
+      },
+      dispose: () => {
+        disposables.forEach((d) => d.dispose());
+      },
+    };
+  } else if (
+    classId === 'gold_wing_coupe' ||
+    classId === 'gold_wing_hyper' ||
+    classId === 'gold_wing_sovereign'
+  ) {
+    // -------------------------------------------------------------------------
+    // 24K GOLDEN FLYING CARS COLLECTION (Deployable Wings + Jet Thrusters!)
+    // -------------------------------------------------------------------------
+    const isSovereign = classId === 'gold_wing_sovereign';
+    const isHyper = classId === 'gold_wing_hyper' || isSovereign;
+    paintMat.color.setHex(baseColor);
+    paintMat.metalness = 0.94;
+    paintMat.roughness = 0.16;
+
+    const goldAccentMat = new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      metalness: 0.96,
+      roughness: 0.12,
+    });
+    const thrusterCoreMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0ea5e9,
+      emissiveIntensity: 1.6,
+      roughness: 0.15,
+    });
+    thrusterGlowMat = thrusterCoreMat;
+    disposables.push(goldAccentMat, thrusterCoreMat);
+
+    const lowerH = h * 0.48;
+    const lowerGeo = new THREE.BoxGeometry(w, lowerH, l);
+    lowerHull = new THREE.Mesh(lowerGeo, paintMat);
+    lowerHull.position.set(0, groundClearance + lowerH / 2, 0);
+    lowerHull.castShadow = true;
+    lowerHull.receiveShadow = true;
+    bodyGroup.add(lowerHull);
+    disposables.push(lowerGeo);
+
+    // Aerodynamic gold nose splitter & intake grille
+    const frontSplitter = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.08, 0.34), darkTrimMat);
+    frontSplitter.position.set(0, groundClearance + 0.04, l / 2 + 0.08);
+    const goldVents = new THREE.Mesh(new THREE.BoxGeometry(w * 0.62, 0.16, 0.08), goldAccentMat);
+    goldVents.position.set(0, groundClearance + lowerH * 0.55, l / 2 + 0.03);
+    const hoodCrest = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.07, l * 0.38), goldAccentMat);
+    hoodCrest.position.set(0, groundClearance + lowerH + 0.03, l * 0.24);
+    frontGroup.add(frontSplitter, goldVents, hoodCrest);
+
+    // Cabin canopy (placed in cabinGroup so 1st-person hides tint cleanly)
+    const cabinH = h - lowerH - groundClearance;
+    const cabinLen = isSovereign ? l * 0.5 : l * 0.46;
+    const cabinGlass = new THREE.Mesh(new THREE.BoxGeometry(w * 0.82, cabinH, cabinLen), glassMat);
+    cabinGlass.position.set(0, groundClearance + lowerH + cabinH / 2 - 0.02, -l * 0.04);
+    cabinGlass.castShadow = true;
+    const goldRoof = new THREE.Mesh(new THREE.BoxGeometry(w * 0.78, 0.1, cabinLen * 0.88), paintMat);
+    goldRoof.position.set(0, groundClearance + lowerH + cabinH - 0.01, -l * 0.04);
+    goldRoof.castShadow = true;
+    cabinGroup.add(cabinGlass, goldRoof);
+
+    // Royal Crown Fin or Twin Vertical Aero Fins on rear deck
+    if (isSovereign) {
+      [-0.52, 0.52].forEach((fx) => {
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.54, 0.92), paintMat);
+        fin.position.set(fx, groundClearance + lowerH + 0.26, -l * 0.34);
+        rearGroup.add(fin);
+      });
+      const skyBridge = new THREE.Mesh(new THREE.BoxGeometry(w * 1.04, 0.08, 0.34), goldAccentMat);
+      skyBridge.position.set(0, groundClearance + lowerH + 0.52, -l * 0.42);
+      rearGroup.add(skyBridge);
+    } else if (isHyper) {
+      const wingRear = new THREE.Mesh(new THREE.BoxGeometry(w * 1.0, 0.07, 0.32), paintMat);
+      wingRear.position.set(0, groundClearance + lowerH + 0.34, -l * 0.43);
+      [-w * 0.34, w * 0.34].forEach((px) => {
+        const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.34, 0.16), darkTrimMat);
+        pylon.position.set(px, groundClearance + lowerH + 0.17, -l * 0.43);
+        rearGroup.add(pylon);
+      });
+      rearGroup.add(wingRear);
+    }
+
+    // Twin Rear Jet Thrusters (with glowing cyan/gold cores!)
+    [-w * 0.26, w * 0.26].forEach((tx) => {
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.5, 10).rotateX(Math.PI / 2), darkTrimMat);
+      pod.position.set(tx, groundClearance + lowerH * 0.52, -l / 2 - 0.04);
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.12, 10).rotateX(Math.PI / 2), thrusterCoreMat);
+      core.position.set(tx, groundClearance + lowerH * 0.52, -l / 2 - 0.26);
+      rearGroup.add(pod, core);
+    });
+
+    // DEPLOYABLE 24K GOLD FLIGHT WINGS (Fold cleanly flush along car flanks; extend out wide on fly!)
+    const wingSpanHalf = isSovereign ? 3.2 : isHyper ? 2.85 : 2.55;
+    const wingY = groundClearance + lowerH * 0.62;
+    const makeGoldWing = (side: -1 | 1) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * (w * 0.46), wingY, -0.05);
+      // Folded state by default: swept tightly backward alongside body (rotation.y ~ +/- 1.48 rad)
+      pivot.rotation.y = side * -1.48;
+
+      const mainBlade = new THREE.Mesh(new THREE.BoxGeometry(wingSpanHalf, 0.1, 1.15), paintMat);
+      mainBlade.position.set(side * (wingSpanHalf * 0.5), 0, 0);
+      mainBlade.castShadow = true;
+
+      const leadEdge = new THREE.Mesh(new THREE.BoxGeometry(wingSpanHalf * 0.96, 0.12, 0.16), goldAccentMat);
+      leadEdge.position.set(side * (wingSpanHalf * 0.5), 0, 0.52);
+
+      const flap = new THREE.Mesh(new THREE.BoxGeometry(wingSpanHalf * 0.72, 0.08, 0.22), darkTrimMat);
+      flap.position.set(side * (wingSpanHalf * 0.46), -0.01, -0.58);
+
+      const wingTip = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.95), darkTrimMat);
+      wingTip.position.set(side * wingSpanHalf, 0.06, -0.05);
+
+      const tipGlow = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.22), thrusterCoreMat);
+      tipGlow.position.set(side * wingSpanHalf, 0.12, 0.35);
+
+      pivot.add(mainBlade, leadEdge, flap, wingTip, tipGlow);
+      bodyGroup.add(pivot);
+      return pivot;
+    };
+
+    wingLeftPivot = makeGoldWing(-1);
+    wingRightPivot = makeGoldWing(1);
+
+    // Headlights, Taillights & Turn Signals
+    const hlY = groundClearance + lowerH * 0.65;
+    [-w * 0.34, w * 0.34].forEach((hx) => {
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.06), headMat);
+      hl.position.set(hx, hlY, l / 2 + 0.01);
+      frontGroup.add(hl);
+      headlightMeshes.push(hl);
+
+      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.11, 0.06), tailMat);
+      tl.position.set(hx, hlY, -l / 2 - 0.01);
+      rearGroup.add(tl);
+      taillightMeshes.push(tl);
+    });
+
+    const leftSig = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.12), leftSigMat);
+    leftSig.position.set(-w * 0.46, hlY, l / 2 - 0.02);
+    const rightSig = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.12), rightSigMat);
+    rightSig.position.set(w * 0.46, hlY, l / 2 - 0.02);
+    frontGroup.add(leftSig, rightSig);
+
+    // 24K Gold Rims + Low-profile Tires
+    const wheelX = w / 2 - 0.04;
+    [
+      [-wheelX, l * 0.31],
+      [wheelX, l * 0.31],
+      [-wheelX, -l * 0.31],
+      [wheelX, -l * 0.31],
+    ].forEach(([wx, wz]) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(wx, wr, wz);
+      const spinGroup = new THREE.Group();
+      const tire = new THREE.Mesh(getTireGeo(wr, 0.3), tireMat);
+      tire.castShadow = true;
+      const rim = new THREE.Mesh(getRimGeo(wr, 0.3), goldAccentMat);
+      spinGroup.add(tire, rim);
+      pivot.add(spinGroup);
+      root.add(pivot);
+      wheelPivots.push(pivot);
+      wheelSpinMeshes.push(spinGroup);
+    });
+
+    // Golden-Amber Underglow Aura
+    const goldUnderglowMat = new THREE.MeshBasicMaterial({
+      map: getCyanGlowTexture(),
+      color: 0xfacc15,
+      transparent: true,
+      opacity: 0.78,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    const underglowGeo = new THREE.PlaneGeometry(w * 1.9, l * 1.38);
+    underglowGeo.rotateX(-Math.PI / 2);
+    underglowPlane = new THREE.Mesh(underglowGeo, goldUnderglowMat);
+    underglowPlane.position.set(0, 0.04, 0);
+    bodyGroup.add(underglowPlane);
+
+    underglowLight = new THREE.PointLight(0xfbbf24, 5.2, 8.0, 1.6);
+    underglowLight.position.set(0, 0.25, 0);
+    bodyGroup.add(underglowLight);
+    disposables.push(goldUnderglowMat, underglowGeo);
+
+    if (withSpotLight) {
+      headlightSpot = new THREE.SpotLight(0xfef08a, 0, 70, Math.PI / 5, 0.45, 1.35);
+      headlightSpot.visible = false;
+      headlightSpot.position.set(0, hlY + 0.2, l / 2);
+      headlightSpot.target.position.set(0, 0, l / 2 + 20);
+      frontGroup.add(headlightSpot);
+      frontGroup.add(headlightSpot.target);
+    }
+
+    return {
+      root,
+      bodyGroup,
+      frontGroup,
+      rearGroup,
+      lowerHull,
+      cabinGroup,
+      wheelPivots,
+      wheelSpinMeshes,
+      wingLeftPivot,
+      wingRightPivot,
+      thrusterGlowMat,
+      headlightMeshes,
+      taillightMeshes,
+      leftSignalMesh: leftSig,
+      rightSignalMesh: rightSig,
+      headlightSpot,
+      underglowLight,
+      underglowPlane,
+      spec,
+      paintMat,
+      damage,
+      applyImpactDent: (localX: number, localZ: number, severity: number) => {
+        const s = THREE.MathUtils.clamp(severity, 0.14, 0.85);
+        if (Math.abs(localZ) >= Math.abs(localX) * 0.85) {
+          if (localZ >= 0) damage.front = Math.min(1.1, damage.front + s);
+          else damage.rear = Math.min(1.1, damage.rear + s);
+        } else {
+          if (localX < 0) damage.left = Math.min(1.1, damage.left + s);
+          else damage.right = Math.min(1.1, damage.right + s);
+        }
+        syncVisualDent();
+      },
+      addBulletHole,
+      setCharred: (charred: boolean) => {
+        damage.charred = charred;
+        paintMat.color.setHex(charred ? 0x1c1917 : baseColor);
+        paintMat.roughness = charred ? 0.96 : 0.16;
+        paintMat.metalness = charred ? 0.1 : 0.94;
+        if (underglowLight) underglowLight.intensity = charred ? 0 : 5.2;
+        if (underglowPlane) underglowPlane.visible = !charred;
+      },
+      resetDamage: () => {
+        damage.front = 0;
+        damage.rear = 0;
+        damage.left = 0;
+        damage.right = 0;
+        damage.charred = false;
+        clearBulletHoles();
+        paintMat.color.setHex(baseColor);
+        paintMat.roughness = 0.16;
+        paintMat.metalness = 0.94;
+        if (underglowLight) underglowLight.intensity = 5.2;
+        if (underglowPlane) underglowPlane.visible = true;
         syncVisualDent();
       },
       dispose: () => {
