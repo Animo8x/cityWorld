@@ -47,6 +47,8 @@ export default defineConfig(() => {
         workbox: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globIgnores: ['**/CityWorld.html'],
+          navigateFallbackDenylist: [/CityWorld\.html/i, /^\/api\//],
         },
         devOptions: {
           enabled: true,

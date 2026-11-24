@@ -15,6 +15,15 @@ export interface VehicleRig {
   wingLeftPivot?: THREE.Group;
   wingRightPivot?: THREE.Group;
   thrusterGlowMat?: THREE.MeshStandardMaterial;
+  robotCarShellGroup?: THREE.Group;
+  robotBodyPivot?: THREE.Group;
+  robotTorsoPivot?: THREE.Group;
+  robotHeadGroup?: THREE.Group;
+  robotLeftArmPivot?: THREE.Group;
+  robotRightArmPivot?: THREE.Group;
+  robotRpgGroup?: THREE.Group;
+  robotLeftLegPivot?: THREE.Group;
+  robotRightLegPivot?: THREE.Group;
   npcLeftLegPivot?: THREE.Group;
   npcRightLegPivot?: THREE.Group;
   headlightMeshes: THREE.Mesh[];
@@ -34,6 +43,68 @@ export interface VehicleRig {
   setCharred: (charred: boolean) => void;
   resetDamage: () => void;
   dispose: () => void;
+}
+
+export function applyRobotTransformToRig(
+  rig: VehicleRig,
+  robotProgress: number,
+  walkPhase: number,
+  recoil = 0,
+  isFirstPerson = false
+): void {
+  const p = THREE.MathUtils.clamp(robotProgress, 0, 1);
+  if (rig.robotCarShellGroup) {
+    rig.robotCarShellGroup.position.set(0, p * 1.48, -p * 0.48);
+    rig.robotCarShellGroup.rotation.x = -p * 1.18;
+    rig.robotCarShellGroup.scale.set(1 - p * 0.16, 1 - p * 0.15, 1 - p * 0.42);
+    rig.robotCarShellGroup.visible = !(isFirstPerson && p > 0.55);
+  }
+
+  const wr = rig.spec.wheelRadius;
+  const w = rig.spec.width;
+  const l = rig.spec.length;
+  const wheelX = w / 2 - 0.04;
+  for (let idx = 0; idx < rig.wheelPivots.length; idx++) {
+    const wp = rig.wheelPivots[idx];
+    const side = idx % 2 === 0 ? -1 : 1;
+    const zSign = idx < 2 ? 1 : -1;
+    wp.position.set(
+      side * (wheelX - p * 0.28),
+      wr + p * 0.56,
+      zSign * (l * 0.31 * (1 - p * 0.72)) - p * 0.22
+    );
+    wp.scale.setScalar(1 - p * 0.46);
+  }
+
+  if (rig.robotBodyPivot) {
+    rig.robotBodyPivot.visible = p > 0.03;
+    const bounce = Math.abs(Math.sin(walkPhase)) * 0.08 * p;
+    rig.robotBodyPivot.position.y = bounce;
+    rig.robotBodyPivot.scale.set(0.55 + p * 0.45, 0.18 + p * 0.82, 0.55 + p * 0.45);
+  }
+
+  const stride = Math.sin(walkPhase) * 0.62 * p;
+  if (rig.robotLeftLegPivot) rig.robotLeftLegPivot.rotation.x = stride;
+  if (rig.robotRightLegPivot) rig.robotRightLegPivot.rotation.x = -stride;
+
+  if (rig.robotTorsoPivot) {
+    rig.robotTorsoPivot.rotation.x = 0.05 * p;
+    rig.robotTorsoPivot.rotation.y = Math.cos(walkPhase) * 0.06 * p;
+  }
+  if (rig.robotHeadGroup) {
+    rig.robotHeadGroup.visible = !(isFirstPerson && p > 0.45);
+  }
+  if (rig.robotLeftArmPivot) {
+    rig.robotLeftArmPivot.rotation.x = -stride * 0.8 - 0.16 * p;
+    rig.robotLeftArmPivot.rotation.z = 0.14 * p;
+  }
+  if (rig.robotRightArmPivot) {
+    rig.robotRightArmPivot.rotation.x = -Math.PI * 0.46 * p - recoil * 0.32;
+    rig.robotRightArmPivot.rotation.z = -0.06 * p;
+  }
+  if (rig.robotRpgGroup) {
+    rig.robotRpgGroup.position.z = 0.14 - recoil * 0.26;
+  }
 }
 
 const sharedTireGeoCache = new Map<string, THREE.BufferGeometry>();
@@ -190,10 +261,11 @@ export function buildVehicleMesh(
   root.add(bodyGroup);
 
   const isMeme = classId.startsWith('meme_');
+  const isMech = classId.startsWith('mech_');
   const paintMat = new THREE.MeshStandardMaterial({
     color: baseColor,
-    metalness: classId === 'truck' || classId === 'bus' || isMeme ? 0.22 : classId === 'nova_x' ? 0.28 : 0.72,
-    roughness: classId === 'nova_x' ? 0.42 : isMeme ? 0.46 : 0.24,
+    metalness: isMech ? (classId === 'mech_omega' ? 0.94 : 0.78) : classId === 'truck' || classId === 'bus' || isMeme ? 0.22 : classId === 'nova_x' ? 0.28 : 0.72,
+    roughness: isMech ? (classId === 'mech_omega' ? 0.16 : 0.24) : classId === 'nova_x' ? 0.42 : isMeme ? 0.46 : 0.24,
   });
 
   const darkTrimMat = sharedDarkTrimMat;
@@ -247,6 +319,15 @@ export function buildVehicleMesh(
   let wingLeftPivot: THREE.Group | undefined;
   let wingRightPivot: THREE.Group | undefined;
   let thrusterGlowMat: THREE.MeshStandardMaterial | undefined;
+  let robotCarShellGroup: THREE.Group | undefined;
+  let robotBodyPivot: THREE.Group | undefined;
+  let robotTorsoPivot: THREE.Group | undefined;
+  let robotHeadGroup: THREE.Group | undefined;
+  let robotLeftArmPivot: THREE.Group | undefined;
+  let robotRightArmPivot: THREE.Group | undefined;
+  let robotRpgGroup: THREE.Group | undefined;
+  let robotLeftLegPivot: THREE.Group | undefined;
+  let robotRightLegPivot: THREE.Group | undefined;
   let lightbarRed: THREE.Mesh | undefined;
   let lightbarBlue: THREE.Mesh | undefined;
   let headlightSpot: THREE.SpotLight | undefined;
@@ -1103,6 +1184,351 @@ export function buildVehicleMesh(
         paintMat.roughness = 0.16;
         paintMat.metalness = 0.94;
         if (underglowLight) underglowLight.intensity = 5.2;
+        if (underglowPlane) underglowPlane.visible = true;
+        syncVisualDent();
+      },
+      dispose: () => {
+        disposables.forEach((d) => d.dispose());
+      },
+    };
+  } else if (isMech) {
+    // -------------------------------------------------------------------------
+    // 5 TRANSFORMING ROBOT CARS (Car Mode <-> Walking Mecha with Infinite RPG)
+    // -------------------------------------------------------------------------
+    const paletteMap: Record<
+      'mech_titan' | 'mech_viper' | 'mech_striker' | 'mech_phantom' | 'mech_omega',
+      { secondary: number; visor: number; glow: number; rim: number }
+    > = {
+      mech_titan: { secondary: 0x1d4ed8, visor: 0x38bdf8, glow: 0x0ea5e9, rim: 0xe2e8f0 },
+      mech_viper: { secondary: 0x0f172a, visor: 0x4ade80, glow: 0x22c55e, rim: 0x4ade80 },
+      mech_striker: { secondary: 0x27272a, visor: 0xfbbf24, glow: 0xf97316, rim: 0xfb923c },
+      mech_phantom: { secondary: 0x1e1b4b, visor: 0x22d3ee, glow: 0xc084fc, rim: 0x22d3ee },
+      mech_omega: { secondary: 0x18181b, visor: 0xfde047, glow: 0xfacc15, rim: 0xfde047 },
+    };
+    const pal = paletteMap[classId as keyof typeof paletteMap];
+
+    const secondaryArmorMat = new THREE.MeshStandardMaterial({
+      color: pal.secondary,
+      metalness: 0.72,
+      roughness: 0.28,
+    });
+    const visorCoreMat = new THREE.MeshStandardMaterial({
+      color: pal.visor,
+      emissive: pal.glow,
+      emissiveIntensity: 2.1,
+      roughness: 0.14,
+    });
+    const gunmetalMat = new THREE.MeshStandardMaterial({
+      color: 0x334155,
+      metalness: 0.82,
+      roughness: 0.34,
+    });
+    const rpgTubeMat = new THREE.MeshStandardMaterial({
+      color: 0x3f6212,
+      metalness: 0.48,
+      roughness: 0.45,
+    });
+    const rocketTipMat = new THREE.MeshStandardMaterial({
+      color: 0xdc2626,
+      emissive: 0xef4444,
+      emissiveIntensity: 0.75,
+      metalness: 0.35,
+      roughness: 0.32,
+    });
+    const rimAccentMat = new THREE.MeshStandardMaterial({
+      color: pal.rim,
+      metalness: 0.88,
+      roughness: 0.18,
+    });
+    disposables.push(secondaryArmorMat, visorCoreMat, gunmetalMat, rpgTubeMat, rocketTipMat, rimAccentMat);
+
+    // 1. CAR SHELL GROUP (morphs up/back cleanly onto robot's shoulders/back!)
+    robotCarShellGroup = new THREE.Group();
+    bodyGroup.add(robotCarShellGroup);
+    robotCarShellGroup.add(frontGroup, rearGroup, cabinGroup);
+
+    const lowerH = h * 0.48;
+    const lowerGeo = new THREE.BoxGeometry(w, lowerH, l);
+    lowerHull = new THREE.Mesh(lowerGeo, paintMat);
+    lowerHull.position.set(0, groundClearance + lowerH / 2, 0);
+    lowerHull.castShadow = true;
+    lowerHull.receiveShadow = true;
+    robotCarShellGroup.add(lowerHull);
+    disposables.push(lowerGeo);
+
+    // Cyber bumper, armor fenders & glowing front core
+    const frontNose = new THREE.Mesh(new THREE.BoxGeometry(w * 0.94, lowerH * 0.65, l * 0.28), paintMat);
+    frontNose.position.set(0, groundClearance + lowerH * 0.46, l * 0.38);
+    const frontSplitter = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.09, 0.32), secondaryArmorMat);
+    frontSplitter.position.set(0, groundClearance + 0.05, l / 2 + 0.07);
+    const grilleBar = new THREE.Mesh(new THREE.BoxGeometry(w * 0.66, 0.12, 0.06), visorCoreMat);
+    grilleBar.position.set(0, groundClearance + lowerH * 0.48, l / 2 + 0.03);
+    frontGroup.add(frontNose, frontSplitter, grilleBar);
+
+    const rearWingPillarL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.22), secondaryArmorMat);
+    rearWingPillarL.position.set(-w * 0.32, groundClearance + lowerH + 0.14, -l / 2 + 0.22);
+    const rearWingPillarR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.22), secondaryArmorMat);
+    rearWingPillarR.position.set(w * 0.32, groundClearance + lowerH + 0.14, -l / 2 + 0.22);
+    const rearSpoiler = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, 0.09, 0.42), paintMat);
+    rearSpoiler.position.set(0, groundClearance + lowerH + 0.3, -l / 2 + 0.16);
+    rearGroup.add(rearWingPillarL, rearWingPillarR, rearSpoiler);
+
+    // Cabin / Armored Canopy
+    const roofMesh = new THREE.Mesh(new THREE.BoxGeometry(w * 0.78, h * 0.4, l * 0.46), secondaryArmorMat);
+    roofMesh.position.set(0, groundClearance + lowerH + h * 0.2, -0.1);
+    const windshield = new THREE.Mesh(new THREE.BoxGeometry(w * 0.74, h * 0.34, 0.08), glassMat);
+    windshield.position.set(0, groundClearance + lowerH + h * 0.22, l * 0.14);
+    windshield.rotation.x = -0.78;
+    const cabinStrip = new THREE.Mesh(new THREE.BoxGeometry(w * 0.64, 0.06, 0.14), visorCoreMat);
+    cabinStrip.position.set(0, groundClearance + lowerH + h * 0.41, 0.05);
+    cabinGroup.add(roofMesh, windshield, cabinStrip);
+
+    // Headlights, Taillights & Turn Signals
+    const hlY = groundClearance + lowerH * 0.66;
+    [-w * 0.34, w * 0.34].forEach((hx) => {
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.13, 0.06), headMat);
+      hl.position.set(hx, hlY, l / 2 + 0.02);
+      frontGroup.add(hl);
+      headlightMeshes.push(hl);
+
+      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.06), tailMat);
+      tl.position.set(hx, hlY, -l / 2 - 0.02);
+      rearGroup.add(tl);
+      taillightMeshes.push(tl);
+    });
+    const leftSig = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.12), leftSigMat);
+    leftSig.position.set(-w * 0.46, hlY, l / 2 - 0.02);
+    const rightSig = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.12), rightSigMat);
+    rightSig.position.set(w * 0.46, hlY, l / 2 - 0.02);
+    frontGroup.add(leftSig, rightSig);
+
+    // 4 Cyber Wheels
+    const wheelX = w / 2 - 0.04;
+    [
+      [-wheelX, l * 0.31],
+      [wheelX, l * 0.31],
+      [-wheelX, -l * 0.31],
+      [wheelX, -l * 0.31],
+    ].forEach(([wx, wz]) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(wx, wr, wz);
+      const spinGroup = new THREE.Group();
+      const tire = new THREE.Mesh(getTireGeo(wr, 0.32), tireMat);
+      tire.castShadow = true;
+      const rim = new THREE.Mesh(getRimGeo(wr, 0.32), rimAccentMat);
+      spinGroup.add(tire, rim);
+      pivot.add(spinGroup);
+      root.add(pivot);
+      wheelPivots.push(pivot);
+      wheelSpinMeshes.push(spinGroup);
+    });
+
+    // 2. ARTICULATED MECH ROBOT RIG (~3.2m tall, rises smoothly when transformed!)
+    robotBodyPivot = new THREE.Group();
+    robotBodyPivot.visible = false;
+    bodyGroup.add(robotBodyPivot);
+
+    // Pelvis / Waist Core
+    const pelvis = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.38, 0.72), gunmetalMat);
+    pelvis.position.set(0, 1.44, 0);
+    robotBodyPivot.add(pelvis);
+
+    // Articulated Left & Right Armored Mech Legs
+    const buildMechLeg = (side: -1 | 1): THREE.Group => {
+      const legPivot = new THREE.Group();
+      legPivot.position.set(side * 0.46, 1.42, 0);
+      const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.68, 0.52), gunmetalMat);
+      thigh.position.set(0, -0.34, 0);
+      const kneePlate = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.24, 0.58), secondaryArmorMat);
+      kneePlate.position.set(0, -0.68, 0.04);
+      const shin = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.72, 0.62), paintMat);
+      shin.position.set(0, -1.04, 0);
+      shin.castShadow = true;
+      const shinGlow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.44, 0.06), visorCoreMat);
+      shinGlow.position.set(0, -1.02, 0.32);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.26, 0.92), secondaryArmorMat);
+      foot.position.set(0, -1.3, 0.14);
+      legPivot.add(thigh, kneePlate, shin, shinGlow, foot);
+      robotBodyPivot!.add(legPivot);
+      return legPivot;
+    };
+    robotLeftLegPivot = buildMechLeg(-1);
+    robotRightLegPivot = buildMechLeg(1);
+
+    // Torso, Chest Core, Shoulder Armor & V-Fin Mecha Head
+    robotTorsoPivot = new THREE.Group();
+    robotTorsoPivot.position.set(0, 1.6, 0);
+    robotBodyPivot.add(robotTorsoPivot);
+
+    const chestBlock = new THREE.Mesh(new THREE.BoxGeometry(1.42, 1.06, 0.88), paintMat);
+    chestBlock.position.set(0, 0.58, 0);
+    chestBlock.castShadow = true;
+    const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.54, 0.18), secondaryArmorMat);
+    chestPlate.position.set(0, 0.72, 0.46);
+    const reactorCore = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.14, 12), visorCoreMat);
+    reactorCore.rotation.x = Math.PI / 2;
+    reactorCore.position.set(0, 0.72, 0.53);
+    const abCore = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.42, 0.72), gunmetalMat);
+    abCore.position.set(0, 0.18, 0);
+    robotTorsoPivot.add(chestBlock, chestPlate, reactorCore, abCore);
+
+    // Shoulder Pauldrons
+    [-1, 1].forEach((side) => {
+      const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.44, 0.72), paintMat);
+      pauldron.position.set(side * 0.94, 1.08, 0);
+      pauldron.rotation.z = -side * 0.16;
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.1, 0.76), visorCoreMat);
+      trim.position.set(side * 0.94, 1.24, 0);
+      trim.rotation.z = -side * 0.16;
+      robotTorsoPivot!.add(pauldron, trim);
+    });
+
+    // Mecha Head with glowing visor & V-Crest
+    robotHeadGroup = new THREE.Group();
+    robotHeadGroup.position.set(0, 1.22, 0.04);
+    const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.52, 0.58), secondaryArmorMat);
+    helmet.position.set(0, 0.24, 0);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.15, 0.08), visorCoreMat);
+    visor.position.set(0, 0.26, 0.28);
+    const crestL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.06), visorCoreMat);
+    crestL.position.set(-0.2, 0.54, 0.24);
+    crestL.rotation.z = 0.45;
+    const crestR = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.06), visorCoreMat);
+    crestR.position.set(0.2, 0.54, 0.24);
+    crestR.rotation.z = -0.45;
+    robotHeadGroup.add(helmet, visor, crestL, crestR);
+    robotTorsoPivot.add(robotHeadGroup);
+
+    // Left Arm (Armored Fist)
+    robotLeftArmPivot = new THREE.Group();
+    robotLeftArmPivot.position.set(-0.98, 0.92, 0);
+    const armUpperL = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.46, 0.36), gunmetalMat);
+    armUpperL.position.set(0, -0.22, 0);
+    const forearmL = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.58, 0.46), paintMat);
+    forearmL.position.set(0, -0.68, 0.04);
+    const fistL = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.36), secondaryArmorMat);
+    fistL.position.set(0, -1.04, 0.04);
+    robotLeftArmPivot.add(armUpperL, forearmL, fistL);
+    robotTorsoPivot.add(robotLeftArmPivot);
+
+    // Right Arm + Handheld Infinite-Ammo RPG Launcher!
+    robotRightArmPivot = new THREE.Group();
+    robotRightArmPivot.position.set(0.98, 0.92, 0);
+    const armUpperR = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.46, 0.36), gunmetalMat);
+    armUpperR.position.set(0, -0.22, 0);
+    const forearmR = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.58, 0.46), paintMat);
+    forearmR.position.set(0, -0.68, 0.04);
+    const fistR = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.36), secondaryArmorMat);
+    fistR.position.set(0, -1.04, 0.04);
+    robotRightArmPivot.add(armUpperR, forearmR, fistR);
+
+    // RPG-7 Launcher gripped vertically-upward in local arm space (points forward when arm raises -PI/2!)
+    robotRpgGroup = new THREE.Group();
+    robotRpgGroup.position.set(0.06, -1.05, 0.14);
+    robotRpgGroup.rotation.x = Math.PI * 0.5;
+    const rpgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 2.05, 10), rpgTubeMat);
+    rpgBarrel.rotation.x = Math.PI / 2;
+    const rpgMidGuard = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.72, 10), gunmetalMat);
+    rpgMidGuard.rotation.x = Math.PI / 2;
+    rpgMidGuard.position.z = 0.08;
+    const rpgRearBell = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.09, 0.34, 10), gunmetalMat);
+    rpgRearBell.rotation.x = Math.PI / 2;
+    rpgRearBell.position.z = -1.08;
+    const rpgGrip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.26, 0.12), darkTrimMat);
+    rpgGrip.position.set(0, -0.16, 0.18);
+    const warheadCone = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.46, 10), rocketTipMat);
+    warheadCone.rotation.x = Math.PI / 2;
+    warheadCone.position.z = 1.24;
+    const warheadNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, 0.24, 10), gunmetalMat);
+    warheadNeck.rotation.x = Math.PI / 2;
+    warheadNeck.position.z = 0.98;
+    robotRpgGroup.add(rpgBarrel, rpgMidGuard, rpgRearBell, rpgGrip, warheadCone, warheadNeck);
+    robotRightArmPivot.add(robotRpgGroup);
+    robotTorsoPivot.add(robotRightArmPivot);
+
+    // Cyber Underglow
+    const mechGlowMat = new THREE.MeshBasicMaterial({
+      map: getCyanGlowTexture(),
+      color: pal.glow,
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    const underglowGeo = new THREE.PlaneGeometry(w * 1.85, l * 1.35);
+    underglowGeo.rotateX(-Math.PI / 2);
+    underglowPlane = new THREE.Mesh(underglowGeo, mechGlowMat);
+    underglowPlane.position.set(0, 0.04, 0);
+    bodyGroup.add(underglowPlane);
+    disposables.push(mechGlowMat, underglowGeo);
+
+    if (withSpotLight) {
+      headlightSpot = new THREE.SpotLight(0xe0f2fe, 0, 68, Math.PI / 5, 0.45, 1.35);
+      headlightSpot.visible = false;
+      headlightSpot.position.set(0, hlY + 0.2, l / 2);
+      headlightSpot.target.position.set(0, 0, l / 2 + 20);
+      frontGroup.add(headlightSpot);
+      frontGroup.add(headlightSpot.target);
+    }
+
+    return {
+      root,
+      bodyGroup,
+      frontGroup,
+      rearGroup,
+      lowerHull,
+      cabinGroup,
+      wheelPivots,
+      wheelSpinMeshes,
+      robotCarShellGroup,
+      robotBodyPivot,
+      robotTorsoPivot,
+      robotHeadGroup,
+      robotLeftArmPivot,
+      robotRightArmPivot,
+      robotRpgGroup,
+      robotLeftLegPivot,
+      robotRightLegPivot,
+      headlightMeshes,
+      taillightMeshes,
+      leftSignalMesh: leftSig,
+      rightSignalMesh: rightSig,
+      headlightSpot,
+      underglowPlane,
+      spec,
+      paintMat,
+      damage,
+      applyImpactDent: (localX: number, localZ: number, severity: number) => {
+        const s = THREE.MathUtils.clamp(severity, 0.14, 0.85);
+        if (Math.abs(localZ) >= Math.abs(localX) * 0.85) {
+          if (localZ >= 0) damage.front = Math.min(1.1, damage.front + s);
+          else damage.rear = Math.min(1.1, damage.rear + s);
+        } else {
+          if (localX < 0) damage.left = Math.min(1.1, damage.left + s);
+          else damage.right = Math.min(1.1, damage.right + s);
+        }
+        syncVisualDent();
+      },
+      addBulletHole,
+      setCharred: (charred: boolean) => {
+        damage.charred = charred;
+        paintMat.color.setHex(charred ? 0x1c1917 : baseColor);
+        paintMat.roughness = charred ? 0.96 : classId === 'mech_omega' ? 0.16 : 0.24;
+        paintMat.metalness = charred ? 0.1 : classId === 'mech_omega' ? 0.94 : 0.78;
+        if (underglowPlane) underglowPlane.visible = !charred;
+      },
+      resetDamage: () => {
+        damage.front = 0;
+        damage.rear = 0;
+        damage.left = 0;
+        damage.right = 0;
+        damage.charred = false;
+        clearBulletHoles();
+        paintMat.color.setHex(baseColor);
+        paintMat.roughness = classId === 'mech_omega' ? 0.16 : 0.24;
+        paintMat.metalness = classId === 'mech_omega' ? 0.94 : 0.78;
         if (underglowPlane) underglowPlane.visible = true;
         syncVisualDent();
       },

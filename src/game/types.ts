@@ -6,7 +6,8 @@ export type GamePhase =
   | 'wasted'
   | 'interior_shop'
   | 'phone'
-  | 'backpack';
+  | 'backpack'
+  | 'multiplayer_lobby';
 
 export type Language = 'en' | 'ar';
 
@@ -112,7 +113,12 @@ export type VehicleClassId =
   | 'meme_shark'
   | 'meme_cat'
   | 'meme_hotdog'
-  | 'meme_toast';
+  | 'meme_toast'
+  | 'mech_titan'
+  | 'mech_viper'
+  | 'mech_striker'
+  | 'mech_phantom'
+  | 'mech_omega';
 
 export interface VehicleSpec {
   id: VehicleClassId;
@@ -133,6 +139,7 @@ export interface VehicleSpec {
   colors: number[];
   price: number;
   canFly?: boolean;
+  canTransformRobot?: boolean;
 }
 
 export type WeatherType = 'clear' | 'cloudy' | 'rain' | 'fog';
@@ -190,7 +197,7 @@ export interface InteriorPortalDef {
 
 export interface MapMarker {
   id: string;
-  type: 'player' | 'mission' | 'vehicle' | 'police' | 'interior' | 'waypoint' | 'objective';
+  type: 'player' | 'remote_player' | 'mission' | 'vehicle' | 'police' | 'interior' | 'waypoint' | 'objective';
   interiorKind?: InteriorPortalDef['kind'];
   x: number;
   z: number;
@@ -211,6 +218,40 @@ export interface ColliderBox {
 export type WeaponId = 'fists' | 'pistol' | 'smg' | 'shotgun' | 'rifle' | 'rpg';
 
 export type QualityMode = 'very_low' | 'low' | 'medium' | 'high' | 'ultra';
+
+export type NetworkQualityMode = 'low' | 'medium' | 'high';
+export type ServerRegionId = 'auto' | 'me_eu' | 'us_east' | 'asia';
+export type MultiplayerConnectionStatus = 'offline' | 'connecting' | 'connected' | 'error';
+
+export interface MultiplayerSessionSummary {
+  id: string;
+  code: string;
+  name: string;
+  region: ServerRegionId;
+  playerCount: number;
+  maxPlayers: number;
+}
+
+export interface MultiplayerHudState {
+  active: boolean;
+  status: MultiplayerConnectionStatus;
+  errorMessage: string | null;
+  localPlayerId: string | null;
+  playerName: string;
+  customName: string;
+  sessionId: string | null;
+  sessionCode: string | null;
+  sessionName: string | null;
+  playerCount: number;
+  maxPlayers: number;
+  pingMs: number;
+  region: ServerRegionId;
+  networkQuality: NetworkQualityMode;
+  mpAudioEnabled: boolean;
+  inVehicleRole: 'none' | 'driver' | 'passenger';
+  passengerSeatIndex: number;
+  driverName: string | null;
+}
 
 export interface HudSnapshot {
   phase: GamePhase;
@@ -235,6 +276,8 @@ export interface HudSnapshot {
   isAirplane: boolean;
   canDeployWings: boolean;
   wingsDeployed: boolean;
+  canTransformRobot: boolean;
+  isRobotTransformed: boolean;
   altitude: number;
   firstPerson: boolean;
   vehicleName: string;
@@ -280,4 +323,7 @@ export interface HudSnapshot {
   qualityMode: QualityMode;
   devUnlocked: boolean;
   completedMissionIds: string[];
+  hasSavedGame: boolean;
+  lastSavedAt: number | null;
+  multiplayer: MultiplayerHudState;
 }

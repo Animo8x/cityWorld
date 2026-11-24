@@ -3,7 +3,17 @@ import { MISSION_REGISTRY } from '../game/missions/missionSystem';
 import { PLAYER_SKINS, PLAYER_SKIN_LIST } from '../game/player/skinCatalog';
 import { VEHICLE_CATALOG } from '../game/vehicles/vehicleCatalog';
 import { INTERIOR_PORTALS } from '../game/world/worldLayout';
-import { HudSnapshot, Language, PlayerSkinId, QualityMode, VehicleClassId, WeaponId } from '../game/types';
+import {
+  HudSnapshot,
+  Language,
+  MultiplayerSessionSummary,
+  NetworkQualityMode,
+  PlayerSkinId,
+  QualityMode,
+  ServerRegionId,
+  VehicleClassId,
+  WeaponId,
+} from '../game/types';
 import {
   CheckCircle2,
   Play,
@@ -23,11 +33,24 @@ import {
   Wallet,
   Navigation,
   Home,
+  Users,
+  Plus,
+  RefreshCw,
+  LogOut,
+  Volume2,
+  VolumeX,
+  Save,
+  Download,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { getText } from '../i18n/translations';
 
 interface PauseModalProps {
   hud: HudSnapshot;
+  buttonScale: number;
+  onSetButtonScale: (scale: number) => void;
+  onDownloadHtml: () => void;
   onResume: () => void;
   onStartMission: (id: string) => void;
   onAbortMission: () => void;
@@ -36,12 +59,25 @@ interface PauseModalProps {
   onSetQualityMode: (mode: QualityMode) => void;
   onSetLanguage: (lang: Language) => void;
   onRedeemCode: (code: string) => { ok: boolean; message: string };
+  onChangePlayerName: (name: string) => void;
+  onSetMpSettings: (patch: {
+    networkQuality?: NetworkQualityMode;
+    region?: ServerRegionId;
+    mpAudioEnabled?: boolean;
+  }) => void;
+  onOpenMultiplayerLobby: () => void;
+  onLeaveMultiplayerSession: () => void;
+  onSaveGame: () => boolean;
+  onResetSave: () => void;
 }
 
 const QUALITY_MODES: QualityMode[] = ['very_low', 'low', 'medium', 'high', 'ultra'];
 
 export const PauseModal: React.FC<PauseModalProps> = ({
   hud,
+  buttonScale,
+  onSetButtonScale,
+  onDownloadHtml,
   onResume,
   onStartMission,
   onAbortMission,
@@ -50,10 +86,20 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onSetQualityMode,
   onSetLanguage,
   onRedeemCode,
+  onChangePlayerName,
+  onSetMpSettings,
+  onOpenMultiplayerLobby,
+  onLeaveMultiplayerSession,
+  onSaveGame,
+  onResetSave,
 }) => {
-  const [tab, setTab] = useState<'environment' | 'missions' | 'unity'>('environment');
+  const [tab, setTab] = useState<'environment' | 'multiplayer' | 'missions' | 'unity'>('environment');
   const [codeInput, setCodeInput] = useState('');
   const [codeFeedback, setCodeFeedback] = useState<{ ok: boolean; message: string } | null>(null);
+  const [nameInput, setNameInput] = useState(hud.multiplayer.customName || hud.multiplayer.playerName);
+  const [nameSavedNotice, setNameSavedNotice] = useState(false);
+  const [saveNotice, setSaveNotice] = useState(false);
+  const [confirmResetSave, setConfirmResetSave] = useState(false);
   const t = getText(hud.language);
   const isRtl = hud.language === 'ar';
 
@@ -85,6 +131,19 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             <Settings className="w-3.5 h-3.5" /> {t.settingsTab}
           </button>
           <button
+            onClick={() => setTab('multiplayer')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
+              tab === 'multiplayer' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" /> {t.mpTab}
+            {hud.multiplayer.active && (
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-black">
+                {hud.multiplayer.playerCount}/{hud.multiplayer.maxPlayers}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setTab('missions')}
             className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
               tab === 'missions' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
@@ -103,6 +162,148 @@ export const PauseModal: React.FC<PauseModalProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
+          {tab === 'multiplayer' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-lg bg-slate-950/75 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-white">{t.mpLobbyTitle}</h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {hud.multiplayer.active
+                        ? `${hud.multiplayer.sessionName || ''} (#${hud.multiplayer.sessionCode || ''})`
+                        : t.singlePlayerOffline}
+                    </p>
+                  </div>
+                  <span
+                    className={`px-2 py-1 rounded text-[10px] font-black ${
+                      hud.multiplayer.active
+                        ? 'bg-emerald-500/20 border border-emerald-500/60 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {hud.multiplayer.active ? `${t.mpOnlineLabel} · ${hud.multiplayer.pingMs}ms` : 'OFFLINE'}
+                  </span>
+                </div>
+
+                {/* Change Player Name */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <label className="text-xs font-bold text-white block">{t.mpPlayerNameLabel}</label>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      onChangePlayerName(nameInput);
+                      setNameSavedNotice(true);
+                      setTimeout(() => setNameSavedNotice(false), 2500);
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      type="text"
+                      maxLength={18}
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder={t.mpNamePlaceholder}
+                      className="flex-1 px-3 py-2 rounded bg-slate-900 border border-slate-700 text-xs font-bold text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3.5 py-2 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer shrink-0"
+                    >
+                      {t.mpChangeName}
+                    </button>
+                  </form>
+                  {nameSavedNotice && (
+                    <div className="text-[11px] font-bold text-emerald-400">{t.mpNameSaved}</div>
+                  )}
+                </div>
+
+                {/* Session Actions */}
+                <div className="pt-3 border-t border-slate-800 flex flex-wrap gap-2">
+                  {hud.multiplayer.active ? (
+                    <>
+                      <button
+                        onClick={onOpenMultiplayerLobby}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white cursor-pointer"
+                      >
+                        <Users className="w-3.5 h-3.5 text-emerald-400" /> {t.multiplayerBtn}
+                      </button>
+                      <button
+                        onClick={onLeaveMultiplayerSession}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5" /> {t.mpLeaveSession}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={onOpenMultiplayerLobby}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer"
+                    >
+                      <Users className="w-4 h-4" /> {t.multiplayerBtn}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Network Quality, Audio & Server Region */}
+              <div className="p-4 rounded-lg bg-slate-950/75 border border-slate-800 space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold text-white mb-2">{t.mpNetworkQualityLabel}</h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['low', 'medium', 'high'] as NetworkQualityMode[]).map((nq) => (
+                      <button
+                        key={nq}
+                        onClick={() => onSetMpSettings({ networkQuality: nq })}
+                        className={`px-2 py-2 rounded text-[11px] font-bold cursor-pointer ${
+                          hud.multiplayer.networkQuality === nq
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        {nq === 'low' ? t.mpQualityLow : nq === 'high' ? t.mpQualityHigh : t.mpQualityMed}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800">
+                  <h4 className="text-xs font-bold text-white mb-2">{t.mpRegionLabel}</h4>
+                  <select
+                    value={hud.multiplayer.region}
+                    onChange={(e) => onSetMpSettings({ region: e.target.value as ServerRegionId })}
+                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
+                  >
+                    <option value="auto">Auto (Lowest Ping)</option>
+                    <option value="me_eu">Middle East & Europe</option>
+                    <option value="us_east">North America</option>
+                    <option value="asia">Asia-Pacific</option>
+                  </select>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">{t.mpAudioLabel}</span>
+                  <button
+                    onClick={() => onSetMpSettings({ mpAudioEnabled: !hud.multiplayer.mpAudioEnabled })}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-black cursor-pointer ${
+                      hud.multiplayer.mpAudioEnabled
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {hud.multiplayer.mpAudioEnabled ? (
+                      <>
+                        <Volume2 className="w-3.5 h-3.5" /> ON
+                      </>
+                    ) : (
+                      <>
+                        <VolumeX className="w-3.5 h-3.5" /> OFF
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {tab === 'missions' && (
             <div className="flex flex-col gap-3">
               {hud.activeMission && (
@@ -213,6 +414,49 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                   </p>
                 </div>
 
+                {/* Button Size (Enlarge / Shrink) */}
+                <div className="pt-3 border-t border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white">{t.buttonSizeLabel}</h4>
+                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[11px] font-black tabular-nums">
+                      {Math.round(buttonScale * 100)}%
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onSetButtonScale(buttonScale - 0.05)}
+                      disabled={buttonScale <= 0.701}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-bold text-sky-300 cursor-pointer shrink-0"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" /> {t.buttonSizeSmall}
+                    </button>
+                    <input
+                      type="range"
+                      min={0.7}
+                      max={1.4}
+                      step={0.05}
+                      value={buttonScale}
+                      onChange={(e) => onSetButtonScale(Number(e.target.value))}
+                      className="flex-1 accent-amber-400 cursor-pointer"
+                    />
+                    <button
+                      onClick={() => onSetButtonScale(buttonScale + 0.05)}
+                      disabled={buttonScale >= 1.399}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-bold text-emerald-300 cursor-pointer shrink-0"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" /> {t.buttonSizeLarge}
+                    </button>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => onSetButtonScale(1)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 cursor-pointer"
+                    >
+                      {t.buttonSizeReset}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Time & Weather */}
                 <div className="pt-3 border-t border-slate-800 space-y-2">
                   <h3 className="text-xs font-bold text-white">{t.timeAndWeather}</h3>
@@ -286,6 +530,81 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     <div className="text-[11px] font-bold text-emerald-400">{t.devCodeUnlocked}</div>
                   )}
                 </div>
+
+                {/* Single Player Save & Reset */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                      <Save className="w-3.5 h-3.5" /> {t.saveTitle}
+                    </h4>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {hud.lastSavedAt
+                        ? `${t.lastSavedLabel}: ${new Date(hud.lastSavedAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}`
+                        : t.notSavedYet}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    {hud.multiplayer.active ? t.saveDisabledInMp : t.saveDesc}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      disabled={hud.multiplayer.active}
+                      onClick={() => {
+                        if (onSaveGame()) {
+                          setSaveNotice(true);
+                          setTimeout(() => setSaveNotice(false), 2500);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 text-xs font-black cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" /> {t.saveNowBtn}
+                    </button>
+
+                    {!confirmResetSave ? (
+                      <button
+                        disabled={hud.multiplayer.active}
+                        onClick={() => setConfirmResetSave(true)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-500/70 disabled:opacity-40 text-slate-300 hover:text-rose-200 text-xs font-bold cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-rose-400" /> {t.resetSaveBtn}
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-rose-950/80 border border-rose-500/70">
+                        <span className="text-[11px] font-bold text-rose-200">{t.confirmResetLabel}</span>
+                        <button
+                          onClick={() => {
+                            setConfirmResetSave(false);
+                            onResetSave();
+                          }}
+                          className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black cursor-pointer"
+                        >
+                          OK
+                        </button>
+                        <button
+                          onClick={() => setConfirmResetSave(false)}
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold cursor-pointer"
+                        >
+                          {t.cancelLabel}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {saveNotice && <div className="text-[11px] font-bold text-emerald-400">{t.saveSuccessMsg}</div>}
+                </div>
+
+                {/* Download Latest Standalone HTML */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <button
+                    onClick={onDownloadHtml}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/60 text-cyan-200 text-xs font-black cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn}
+                  </button>
+                  <p className="text-[11px] text-slate-400">{t.downloadHtmlHint}</p>
+                </div>
               </div>
 
               <div className="p-4 rounded-lg bg-slate-950/70 border border-slate-800 space-y-2 text-xs text-slate-300">
@@ -295,6 +614,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     <div><strong className="text-amber-400">عصا التحكم / WASD:</strong> المشي والسباحة والقيادة</div>
                     <div><strong className="text-cyan-400">منظور أول / C:</strong> تبديل الكاميرا (منظور أول داخل السيارات والدراجات والطائرات ومع الأسلحة)</div>
                     <div><strong className="text-sky-400">الطيران (طائرة):</strong> Space / صعود، Shift / نزول للسفر إلى الجزيرة والعودة</div>
+                    <div><strong className="text-cyan-300">السيارات الآلية / X:</strong> تحويل لروبوت يمشي مع قاذف RPG لا نهائي (إطلاق: Click أو G)</div>
                     <div><strong className="text-amber-400">زر اليد / V:</strong> ضرب الأشخاص القريبين</div>
                     <div><strong className="text-amber-400">زر الإطلاق / G:</strong> إطلاق النار بالمسدس، الشوزن، البندقية، أو RPG</div>
                     <div><strong className="text-amber-400">تبديل السلاح / 1-6:</strong> يد، مسدس، رشاش، شوزن، بندقية، RPG</div>
@@ -309,6 +629,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     <div><strong className="text-amber-400">WASD / Arrows:</strong> Walk, Swim, Drive, Fly</div>
                     <div><strong className="text-cyan-400">C / Camera Button:</strong> Toggle 1st-Person & 3rd-Person View</div>
                     <div><strong className="text-sky-400">Airplane Controls:</strong> Space Climb · Shift Descend · Fly to Palm Cove Island</div>
+                    <div><strong className="text-cyan-300">Robot Cars / X:</strong> Transform to Walking Mech with Infinite RPG (Click or G)</div>
                     <div><strong className="text-amber-400">V / Punch Button:</strong> Punch Nearby Pedestrian</div>
                     <div><strong className="text-amber-400">Click / G:</strong> Fire Weapon (Pistol, SMG, Shotgun, Rifle, RPG)</div>
                     <div><strong className="text-amber-400">1–6 / Tab:</strong> Switch Weapon</div>
@@ -339,6 +660,9 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                 <div className="p-2.5 rounded bg-slate-950 border border-slate-800">World/WorldStreamingManager.cs · InteriorPortal.cs</div>
                 <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Environment/DayNightWeather.cs</div>
                 <div className="p-2.5 rounded bg-slate-950 border border-slate-800">Audio/AudioManager.cs · UI/CityWorldHUD.cs</div>
+                <div className="p-2.5 rounded bg-slate-950 border border-slate-800 md:col-span-2 text-emerald-300">
+                  Multiplayer/NetworkSessionManager.cs · NetworkPlayerSync.cs · NetworkVehicleSync.cs · PassengerSeatSystem.cs
+                </div>
               </div>
               <p className="text-slate-400">
                 See <code className="text-sky-400">/unity/CityWorld/README_UNITY_SETUP.md</code> for URP lighting, NavMesh baking, WheelCollider prefabs, and Additive Scene Streaming setup.
@@ -996,6 +1320,261 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({ hud, onEquipSkin, 
               </div>
             );
           })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface MultiplayerModalProps {
+  hud: HudSnapshot;
+  sessions: MultiplayerSessionSummary[];
+  onRefreshSessions: () => void;
+  onCreateSession: (name: string, maxPlayers: number) => void;
+  onJoinSession: (options: { sessionId?: string; sessionCode?: string }) => void;
+  onLeaveSession: () => void;
+  onChangeName: (name: string) => void;
+  onCloseToGame: () => void;
+}
+
+export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
+  hud,
+  sessions,
+  onRefreshSessions,
+  onCreateSession,
+  onJoinSession,
+  onLeaveSession,
+  onChangeName,
+  onCloseToGame,
+}) => {
+  const t = getText(hud.language);
+  const isRtl = hud.language === 'ar';
+  const [playerName, setPlayerName] = useState(hud.multiplayer.customName || '');
+  const [nameSaved, setNameSaved] = useState(false);
+  const [roomName, setRoomName] = useState(isRtl ? 'غرفة CityWorld' : 'CityWorld Room');
+  const [maxPlayers, setMaxPlayers] = useState(8);
+  const [joinCode, setJoinCode] = useState('');
+
+  return (
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/92 flex items-center justify-center p-4">
+      <div className="w-full max-w-3xl bg-slate-900 border border-emerald-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 shrink-0">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-white">{t.mpLobbyTitle}</h2>
+              <p className="text-xs text-slate-400">{t.mpLobbySub}</p>
+            </div>
+          </div>
+          <button
+            onClick={onCloseToGame}
+            className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-100 cursor-pointer shrink-0"
+          >
+            {t.mpBackToSingle}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {hud.multiplayer.status === 'connecting' && (
+            <div className="p-3.5 rounded-xl bg-sky-950/80 border border-sky-500/60 text-xs font-bold text-sky-200 flex items-center gap-2">
+              <Wifi className="w-4 h-4 animate-pulse text-sky-400" />
+              <span>{t.mpConnecting}</span>
+            </div>
+          )}
+
+          {hud.multiplayer.errorMessage && (
+            <div className="p-3.5 rounded-xl bg-rose-950/85 border border-rose-500/70 text-xs font-bold text-rose-200 flex flex-wrap items-center justify-between gap-2">
+              <span>{hud.multiplayer.errorMessage}</span>
+              <button
+                onClick={onCloseToGame}
+                className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black cursor-pointer"
+              >
+                {t.mpBackToSingle}
+              </button>
+            </div>
+          )}
+
+          {/* Player Name & Active Session Banner */}
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-bold text-slate-400">{t.mpPlayerNameLabel}</div>
+              <div className="text-sm font-black text-emerald-400">
+                {hud.multiplayer.active ? hud.multiplayer.playerName : playerName || 'Player #'}
+              </div>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onChangeName(playerName);
+                setNameSaved(true);
+                setTimeout(() => setNameSaved(false), 2200);
+              }}
+              className="flex gap-2 flex-1 max-w-md"
+            >
+              <input
+                type="text"
+                maxLength={18}
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                placeholder={t.mpNamePlaceholder}
+                className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-400"
+              />
+              <button
+                type="submit"
+                className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer shrink-0"
+              >
+                {t.mpChangeName}
+              </button>
+            </form>
+            {nameSaved && <span className="text-[11px] font-bold text-emerald-400">{t.mpNameSaved}</span>}
+          </div>
+
+          {hud.multiplayer.active && (
+            <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-black text-emerald-300">
+                  {hud.multiplayer.sessionName} · #{hud.multiplayer.sessionCode}
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  {t.mpPlayersLabel}: {hud.multiplayer.playerCount}/{hud.multiplayer.maxPlayers} · {t.mpPingLabel}:{' '}
+                  {hud.multiplayer.pingMs} ms
+                </div>
+              </div>
+              <button
+                onClick={onLeaveSession}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" /> {t.mpLeaveSession}
+              </button>
+            </div>
+          )}
+
+          {/* Create Session & Join by Code */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onCreateSession(roomName, maxPlayers);
+              }}
+              className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3"
+            >
+              <div className="flex items-center gap-2 text-xs font-black text-white">
+                <Plus className="w-4 h-4 text-emerald-400" />
+                <span>{t.mpCreateSession}</span>
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">{t.mpSessionNameLabel}</label>
+                <input
+                  type="text"
+                  maxLength={28}
+                  value={roomName}
+                  onChange={(e) => setRoomName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">{t.mpMaxPlayersLabel}</label>
+                <select
+                  value={maxPlayers}
+                  onChange={(e) => setMaxPlayers(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white"
+                >
+                  <option value={4}>4</option>
+                  <option value={8}>8 (Default)</option>
+                  <option value={12}>12</option>
+                  <option value={16}>16</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer"
+              >
+                {t.mpCreateSession}
+              </button>
+            </form>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (joinCode.trim()) {
+                  onJoinSession({ sessionCode: joinCode.trim() });
+                }
+              }}
+              className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3 flex flex-col justify-between"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-black text-white">
+                  <Wifi className="w-4 h-4 text-sky-400" />
+                  <span>{t.mpJoinByCode}</span>
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">{t.mpSessionCodeLabel}</label>
+                  <input
+                    type="text"
+                    maxLength={8}
+                    dir="ltr"
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                    placeholder="CW1001"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm font-mono font-black text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-black cursor-pointer"
+              >
+                {t.mpJoinSession}
+              </button>
+            </form>
+          </div>
+
+          {/* Open Sessions List */}
+          <div className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-white">{t.mpJoinSession}</h3>
+              <button
+                onClick={onRefreshSessions}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" /> {t.mpRefreshSessions}
+              </button>
+            </div>
+
+            {sessions.length === 0 ? (
+              <div className="text-xs text-slate-400 py-3 text-center">{t.mpNoSessions}</div>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-900 border border-slate-800"
+                  >
+                    <div>
+                      <div className="text-xs font-extrabold text-white">
+                        {s.name}{' '}
+                        <span className="font-mono text-[10px] text-sky-400 px-1.5 py-0.5 rounded bg-slate-800">
+                          #{s.code}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {t.mpPlayersLabel}: {s.playerCount}/{s.maxPlayers} · {s.region.toUpperCase()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onJoinSession({ sessionId: s.id })}
+                      disabled={s.playerCount >= s.maxPlayers}
+                      className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 text-xs font-black cursor-pointer shrink-0"
+                    >
+                      {t.mpJoinSession}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

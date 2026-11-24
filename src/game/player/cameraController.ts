@@ -56,7 +56,7 @@ export class ThirdPersonCameraController {
     speedRatio: number,
     autoAlign: boolean,
     inInterior: boolean,
-    vehicleType: 'none' | 'car' | 'bike' | 'airplane' = 'none'
+    vehicleType: 'none' | 'car' | 'bike' | 'airplane' | 'robot' = 'none'
   ): void {
     if (this.firstPerson) {
       if (Math.abs(camera.near - 0.08) > 0.005) {
@@ -71,21 +71,36 @@ export class ThirdPersonCameraController {
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         this.yaw += diff * Math.min(1, 5.2 * dt);
-        this.pitch = THREE.MathUtils.damp(this.pitch, vehicleType === 'airplane' ? -0.02 : -0.04, 4, dt);
+        this.pitch = THREE.MathUtils.damp(
+          this.pitch,
+          vehicleType === 'airplane' ? -0.02 : vehicleType === 'robot' ? -0.03 : -0.04,
+          4,
+          dt
+        );
       }
 
       const fwdX = Math.sin(targetHeading);
       const fwdZ = Math.cos(targetHeading);
       const eyeY =
-        vehicleType === 'bike'
-          ? 1.48
-          : vehicleType === 'airplane'
-            ? 1.78
-            : vehicleType === 'car'
-              ? 1.24
-              : 1.66;
+        vehicleType === 'robot'
+          ? 2.72
+          : vehicleType === 'bike'
+            ? 1.48
+            : vehicleType === 'airplane'
+              ? 1.78
+              : vehicleType === 'car'
+                ? 1.24
+                : 1.66;
       const forwardBias =
-        vehicleType === 'car' ? 0.55 : vehicleType === 'airplane' ? 1.15 : vehicleType === 'bike' ? 0.18 : 0.0;
+        vehicleType === 'robot'
+          ? 0.25
+          : vehicleType === 'car'
+            ? 0.55
+            : vehicleType === 'airplane'
+              ? 1.15
+              : vehicleType === 'bike'
+                ? 0.18
+                : 0.0;
 
       const desiredEyeX = targetX + fwdX * forwardBias;
       const desiredEyeY = targetY + eyeY;
@@ -135,11 +150,15 @@ export class ThirdPersonCameraController {
       ? 4.4
       : vehicleType === 'airplane'
         ? Math.max(11.5, this.distance * 1.55)
-        : inVehicle
-          ? Math.max(7.2, this.distance * 1.28)
-          : this.distance;
-    const desiredDist = baseDist + speedRatio * (vehicleType === 'airplane' ? 4.2 : inVehicle ? 2.8 : 0.8);
-    const lookHeight = vehicleType === 'airplane' ? 1.85 : inVehicle ? 1.5 : 1.55;
+        : vehicleType === 'robot'
+          ? Math.max(8.6, this.distance * 1.38)
+          : inVehicle
+            ? Math.max(7.2, this.distance * 1.28)
+            : this.distance;
+    const desiredDist =
+      baseDist + speedRatio * (vehicleType === 'airplane' ? 4.2 : vehicleType === 'robot' ? 1.4 : inVehicle ? 2.8 : 0.8);
+    const lookHeight =
+      vehicleType === 'robot' ? 2.25 : vehicleType === 'airplane' ? 1.85 : inVehicle ? 1.5 : 1.55;
 
     this.currentTarget.x = THREE.MathUtils.damp(this.currentTarget.x, targetX, 16, dt);
     this.currentTarget.y = THREE.MathUtils.damp(this.currentTarget.y, targetY + lookHeight, 16, dt);

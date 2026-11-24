@@ -1,22 +1,37 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Globe } from 'lucide-react';
+import { Download, Globe, RotateCcw, Save, Users } from 'lucide-react';
 import { Language } from '../game/types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { getText } from '../i18n/translations';
 
 interface TitleScreenProps {
   language: Language;
+  hasSavedGame: boolean;
+  savedMoney: number;
+  savedMissions: number;
+  totalMissions: number;
   onSetLanguage: (lang: Language) => void;
   onStart: () => void;
+  onNewGame: () => void;
+  onOpenMultiplayer: () => void;
+  onDownloadHtml: () => void;
 }
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   language,
+  hasSavedGame,
+  savedMoney,
+  savedMissions,
+  totalMissions,
   onSetLanguage,
   onStart,
+  onNewGame,
+  onOpenMultiplayer,
+  onDownloadHtml,
 }) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const t = getText(language);
 
   useEffect(() => {
@@ -95,12 +110,69 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
       {/* Bottom CTA & Flat Control Hint Line */}
       <div className="flex flex-col items-start gap-3 pointer-events-auto">
+        {hasSavedGame && (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-900/90 border border-emerald-400/50 text-xs font-bold text-emerald-300 shadow-lg">
+            <Save className="w-3.5 h-3.5" />
+            <span>
+              {t.savedSummaryPrefix}: ${savedMoney.toLocaleString()} · {savedMissions}/{totalMissions} {t.missionsDone}
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={onStart}
             className="px-7 py-3.5 md:px-8 md:py-4 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-extrabold text-base md:text-lg tracking-wide uppercase shadow-xl transition-transform cursor-pointer"
           >
-            {t.enterWorld}
+            {hasSavedGame ? t.continueWorld : t.enterWorld}
+          </button>
+
+          <button
+            onClick={onOpenMultiplayer}
+            className="flex items-center gap-2 px-6 py-3.5 md:px-7 md:py-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-slate-950 font-extrabold text-base md:text-lg tracking-wide shadow-xl border border-emerald-200 transition-transform cursor-pointer"
+          >
+            <Users className="w-5 h-5" />
+            <span>{t.multiplayerBtn}</span>
+          </button>
+
+          {hasSavedGame && !confirmReset && (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="flex items-center gap-1.5 px-4 py-3.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-600 text-slate-200 font-bold text-xs md:text-sm shadow-lg cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4 text-rose-400" />
+              <span>{t.startNewGame}</span>
+            </button>
+          )}
+
+          {hasSavedGame && confirmReset && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-950/90 border border-rose-500/70 shadow-lg">
+              <span className="text-xs font-bold text-rose-200">{t.confirmResetLabel}</span>
+              <button
+                onClick={() => {
+                  setConfirmReset(false);
+                  onNewGame();
+                }}
+                className="px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-black cursor-pointer"
+              >
+                {t.startNewGame}
+              </button>
+              <button
+                onClick={() => setConfirmReset(false)}
+                className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold cursor-pointer"
+              >
+                {t.cancelLabel}
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={onDownloadHtml}
+            className="flex items-center gap-2 px-4 py-3.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-cyan-400/60 text-cyan-300 font-bold text-xs md:text-sm shadow-lg cursor-pointer"
+            title={t.downloadHtmlHint}
+          >
+            <Download className="w-4 h-4" />
+            <span>{t.downloadHtmlBtn}</span>
           </button>
 
           {!isInstalled && isInstallable && (

@@ -10,7 +10,7 @@ import {
   WATER_LEVEL,
 } from '../world/worldLayout';
 import { VEHICLE_CATALOG } from './vehicleCatalog';
-import { buildVehicleMesh, VehicleRig } from './vehicleMesh';
+import { applyRobotTransformToRig, buildVehicleMesh, VehicleRig } from './vehicleMesh';
 
 export interface WorldVehicle {
   id: string;
@@ -37,6 +37,10 @@ export interface WorldVehicle {
   drifting: boolean;
   wingsDeployed: boolean;
   wingProgress: number;
+  robotTransformed: boolean;
+  robotProgress: number;
+  robotWalkPhase: number;
+  robotRecoil: number;
   crashCooldown: number;
 }
 
@@ -65,6 +69,16 @@ export function isAirplaneClass(cls: VehicleClassId): boolean {
 
 export function isFlyingCarClass(cls: VehicleClassId): boolean {
   return cls === 'gold_wing_coupe' || cls === 'gold_wing_hyper' || cls === 'gold_wing_sovereign';
+}
+
+export function isRobotCarClass(cls: VehicleClassId): boolean {
+  return (
+    cls === 'mech_titan' ||
+    cls === 'mech_viper' ||
+    cls === 'mech_striker' ||
+    cls === 'mech_phantom' ||
+    cls === 'mech_omega'
+  );
 }
 
 export function canFlyVehicle(cls: VehicleClassId): boolean {
@@ -564,6 +578,10 @@ export class VehicleManager {
       drifting: false,
       wingsDeployed: false,
       wingProgress: 0,
+      robotTransformed: false,
+      robotProgress: 0,
+      robotWalkPhase: 0,
+      robotRecoil: 0,
       crashCooldown: 0,
     };
     this.vehicles.push(v);
@@ -634,6 +652,12 @@ export class VehicleManager {
       { classId: 'gold_wing_sovereign', x: 830, z: -140, heading: -Math.PI * 0.5 },
       { classId: 'gold_wing_hyper', x: 1015, z: -188, heading: Math.PI * 0.5 },
       { classId: 'gold_wing_coupe', x: 912, z: -15, heading: 0 },
+      // 5 Transforming Robot Cars (Drive as Cars OR Transform into RPG Mechs!)
+      { classId: 'mech_titan', x: -32, z: -18, heading: Math.PI * 0.5 },
+      { classId: 'mech_viper', x: 64, z: 112, heading: Math.PI },
+      { classId: 'mech_striker', x: -130, z: 22, heading: 0 },
+      { classId: 'mech_phantom', x: 138, z: -32, heading: -Math.PI * 0.5 },
+      { classId: 'mech_omega', x: 855, z: -135, heading: -Math.PI * 0.5 },
     ];
 
     spawns.forEach((s, i) => {
@@ -706,7 +730,8 @@ export class VehicleManager {
     onVehicleExploded: (v: WorldVehicle) => void,
     onHitWorldBorder?: () => void,
     focusX = 0,
-    focusZ = 0
+    focusZ = 0,
+    firstPerson = false
   ): void {
     this.signalTimer += dt;
     const blinkOn = Math.floor(this.signalTimer * 2.5) % 2 === 0;
@@ -718,6 +743,7 @@ export class VehicleManager {
       const isBike = isBicycleClass(v.classId);
       const isPlane = isAirplaneClass(v.classId);
       const isFlyingCar = isFlyingCarClass(v.classId);
+      const isRobotCar = isRobotCarClass(v.classId);
       const terrainFloorNow = groundHeightAt(v.x, v.z);
       if (v.crashCooldown > 0) v.crashCooldown = Math.max(0, v.crashCooldown - dt);
 
@@ -740,116 +766,188 @@ export class VehicleManager {
         }
       }
 
+      // Animate Car <-> Robot Mech Transformation + Walking Stride + RPG Recoil
+      if (isRobotCar) {
+        const targetRobot = v.robotTransformed && !v.exploded ? 1 : 0;
+        v.robotProgress = THREE.MathUtils.damp(v.robotProgress, targetRobot, 7.2, dt);
+        v.robotRecoil = Math.max(0, v.robotRecoil - dt * 3.8);
+        applyRobotTransformToRig(
+          v.rig,
+          v.robotProgress,
+          v.robotWalkPhase,
+          v.robotRecoil,
+          Boolean(v === activeVehicle && firstPerson)
+        );
+      }
+
+      const inRobotWalkMode = isRobotCar && v.robotTransformed && !v.exploded;
       const canFlyMode = isPlane || (isFlyingCar && (v.wingsDeployed || v.y > terrainFloorNow + 0.55));
       const isAirborne = canFlyMode && v.y > terrainFloorNow + 0.45;
 
       if (v === activeVehicle && !v.exploded) {
-        const climbInput = input.climb ?? (input.handbrake ? 1 : 0);
-        // Auto-deploy wings when player holds Climb while speeding in a Golden Flying Car
-        if (isFlyingCar && !v.wingsDeployed && climbInput > 0.1 && Math.abs(v.forwardSpeed) > 16) {
-          v.wingsDeployed = true;
-        }
+        if (inRobotWalkMode) {
+          // Bipedal Mech Walking, On-the-Spot Turning & Hydraulic Jump
+          const walkMaxSpeed =
+            v.classId === 'mech_omega'
+              ? 27
+              : v.classId === 'mech_phantom'
+                ? 25
+                : v.classId === 'mech_striker'
+                  ? 23
+                  : v.classId === 'mech_viper'
+                    ? 22
+                    : 20;
+          v.steerAngle = THREE.MathUtils.damp(v.steerAngle, input.steer * 0.4, 10, dt);
+          v.heading += input.steer * 2.55 * dt;
 
-        const accel = input.throttle > 0 ? spec.acceleration : spec.braking;
-        const targetSteer = input.steer * (canFlyMode ? 0.64 : 0.54);
-        v.steerAngle = THREE.MathUtils.damp(v.steerAngle, targetSteer, canFlyMode ? 7 : 10, dt);
+          const fwdX = Math.sin(v.heading);
+          const fwdZ = Math.cos(v.heading);
+          const rightX = Math.cos(v.heading);
+          const rightZ = -Math.sin(v.heading);
 
-        const fwdX = Math.sin(v.heading);
-        const fwdZ = Math.cos(v.heading);
-        const rightX = Math.cos(v.heading);
-        const rightZ = -Math.sin(v.heading);
+          let fSpeed = v.vx * fwdX + v.vz * fwdZ;
+          let latSpeed = v.vx * rightX + v.vz * rightZ;
 
-        let fSpeed = v.vx * fwdX + v.vz * fwdZ;
-        let latSpeed = v.vx * rightX + v.vz * rightZ;
-
-        v.braking = false;
-        if (input.throttle > 0.05) {
-          fSpeed += input.throttle * accel * dt;
-        } else if (input.throttle < -0.05) {
-          if (fSpeed > 1.5) {
-            fSpeed = Math.max(0, fSpeed - spec.braking * dt);
-            v.braking = true;
+          v.braking = false;
+          if (input.throttle > 0.05) {
+            fSpeed = THREE.MathUtils.damp(fSpeed, input.throttle * walkMaxSpeed, 8.5, dt);
+          } else if (input.throttle < -0.05) {
+            fSpeed = THREE.MathUtils.damp(fSpeed, input.throttle * 12, 9.0, dt);
           } else {
-            fSpeed += input.throttle * spec.acceleration * 0.65 * dt;
+            fSpeed = THREE.MathUtils.damp(fSpeed, 0, 12.0, dt);
           }
+          latSpeed = THREE.MathUtils.damp(latSpeed, 0, 15.0, dt);
+
+          v.vx = fwdX * fSpeed + rightX * latSpeed;
+          v.vz = fwdZ * fSpeed + rightZ * latSpeed;
+          v.forwardSpeed = fSpeed;
+          v.drifting = false;
+
+          // Mech Jump on Space / Handbrake / Climb
+          const wantJump = input.handbrake || (input.climb ?? 0) > 0.1;
+          const bridgeFloor = getBridgeDeckHeight(v.x, v.z);
+          const curFloor = bridgeFloor !== null && v.y >= bridgeFloor - 1.5 ? Math.max(terrainFloorNow, bridgeFloor) : terrainFloorNow;
+          if (wantJump && v.y <= curFloor + 0.14 && v.vy <= 0.2) {
+            v.vy = 11.8;
+          }
+
+          if (Math.abs(fSpeed) > 0.65) {
+            v.robotWalkPhase += (4.5 + Math.abs(fSpeed) * 0.45) * dt * (fSpeed >= 0 ? 1 : -1);
+          } else {
+            const restPhase = Math.round(v.robotWalkPhase / Math.PI) * Math.PI;
+            v.robotWalkPhase = THREE.MathUtils.damp(v.robotWalkPhase, restPhase, 10, dt);
+          }
+
+          v.pitch = THREE.MathUtils.damp(v.pitch, -input.throttle * 0.04, 10, dt);
+          v.roll = THREE.MathUtils.damp(v.roll, 0, 10, dt);
         } else {
-          fSpeed = THREE.MathUtils.damp(fSpeed, isAirborne ? 34 : 0, canFlyMode ? 0.45 : isBike ? 1.8 : 1.35, dt);
-        }
+          const climbInput = input.climb ?? (input.handbrake ? 1 : 0);
+          // Auto-deploy wings when player holds Climb while speeding in a Golden Flying Car
+          if (isFlyingCar && !v.wingsDeployed && climbInput > 0.1 && Math.abs(v.forwardSpeed) > 16) {
+            v.wingsDeployed = true;
+          }
 
-        if (input.handbrake && !canFlyMode) {
-          fSpeed = THREE.MathUtils.damp(fSpeed, 0, 2.8, dt);
-          v.braking = true;
-        }
+          const accel = input.throttle > 0 ? spec.acceleration : spec.braking;
+          const targetSteer = input.steer * (canFlyMode ? 0.64 : 0.54);
+          v.steerAngle = THREE.MathUtils.damp(v.steerAngle, targetSteer, canFlyMode ? 7 : 10, dt);
 
-        fSpeed = THREE.MathUtils.clamp(fSpeed, isPlane ? -8 : -spec.reverseSpeed, spec.maxSpeed);
+          const fwdX = Math.sin(v.heading);
+          const fwdZ = Math.cos(v.heading);
+          const rightX = Math.cos(v.heading);
+          const rightZ = -Math.sin(v.heading);
 
-        const speedFactor = canFlyMode
-          ? Math.max(0.35, Math.min(1, Math.abs(fSpeed) / 14))
-          : Math.min(1, Math.abs(fSpeed) / (isBike ? 2.5 : 6.5));
-        const dirSign = fSpeed >= -0.2 ? 1 : -1;
-        const turnRate =
-          v.steerAngle * spec.steeringSpeed * speedFactor * dirSign * (!canFlyMode && input.handbrake ? 1.35 : 1.0);
-        v.heading += turnRate * dt;
+          let fSpeed = v.vx * fwdX + v.vz * fwdZ;
+          let latSpeed = v.vx * rightX + v.vz * rightZ;
 
-        const gripLambda = canFlyMode
-          ? 5.5
-          : input.handbrake
-            ? 2.2 * rainGripFactor
-            : (1 - spec.driftGrip) * 65 * rainGripFactor + 3.5;
-        latSpeed = THREE.MathUtils.damp(latSpeed, 0, gripLambda, dt);
-
-        v.drifting = !isBike && !canFlyMode && (Math.abs(latSpeed) > 3.8 || (input.handbrake && Math.abs(fSpeed) > 8));
-
-        const newFwdX = Math.sin(v.heading);
-        const newFwdZ = Math.cos(v.heading);
-        const newRightX = Math.cos(v.heading);
-        const newRightZ = -Math.sin(v.heading);
-
-        v.vx = newFwdX * fSpeed + newRightX * latSpeed;
-        v.vz = newFwdZ * fSpeed + newRightZ * latSpeed;
-        v.forwardSpeed = fSpeed;
-        v.pedalPhase += Math.abs(fSpeed) * dt * 1.45;
-
-        // Flight lift, climb (Space / climb > 0), and descent (Shift / climb < 0)
-        if (canFlyMode) {
-          const liftThreshold = isFlyingCar ? 15 : 18;
-          if (fSpeed > liftThreshold) {
-            if (climbInput > 0.1) {
-              v.vy = THREE.MathUtils.damp(v.vy, 17, 4.5, dt);
-            } else if (climbInput < -0.1) {
-              v.vy = THREE.MathUtils.damp(v.vy, -14, 4.5, dt);
-            } else if (v.y <= terrainFloorNow + 0.25 && fSpeed > (isFlyingCar ? 42 : 38) && input.throttle > 0.2) {
-              v.vy = 6.8;
-            } else if (v.y > terrainFloorNow + 0.35) {
-              v.vy = THREE.MathUtils.damp(v.vy, 0, 4.0, dt);
+          v.braking = false;
+          if (input.throttle > 0.05) {
+            fSpeed += input.throttle * accel * dt;
+          } else if (input.throttle < -0.05) {
+            if (fSpeed > 1.5) {
+              fSpeed = Math.max(0, fSpeed - spec.braking * dt);
+              v.braking = true;
+            } else {
+              fSpeed += input.throttle * spec.acceleration * 0.65 * dt;
             }
-          } else if (v.y > terrainFloorNow + 0.2) {
-            v.vy = THREE.MathUtils.damp(v.vy, -6.5, 2.5, dt);
+          } else {
+            fSpeed = THREE.MathUtils.damp(fSpeed, isAirborne ? 34 : 0, canFlyMode ? 0.45 : isBike ? 1.8 : 1.35, dt);
           }
 
-          if (v.y > 145) {
-            v.y = 145;
-            v.vy = Math.min(0, v.vy);
+          if (input.handbrake && !canFlyMode) {
+            fSpeed = THREE.MathUtils.damp(fSpeed, 0, 2.8, dt);
+            v.braking = true;
           }
-          v.y += v.vy * dt;
 
-          const targetPlanePitch = THREE.MathUtils.clamp(-v.vy * 0.025, -0.35, 0.32);
-          const airFactor = v.y > terrainFloorNow + 0.45 ? 1.0 : 0.25;
-          const targetPlaneRoll = -v.steerAngle * 0.65 * airFactor;
-          v.pitch = THREE.MathUtils.damp(v.pitch, targetPlanePitch, 6, dt);
-          v.roll = THREE.MathUtils.damp(v.roll, targetPlaneRoll, 6, dt);
-        } else {
-          const targetPitch = -input.throttle * 0.045 + (v.braking ? 0.055 : 0);
-          const leanFactor = isBike || v.classId === 'motorcycle' ? -0.35 : -0.14;
-          const targetRoll = v.steerAngle * Math.min(1, Math.abs(fSpeed) / 14) * leanFactor;
-          v.pitch = THREE.MathUtils.damp(v.pitch, targetPitch, 9, dt);
-          v.roll = THREE.MathUtils.damp(v.roll, targetRoll, 9, dt);
-        }
+          fSpeed = THREE.MathUtils.clamp(fSpeed, isPlane ? -8 : -spec.reverseSpeed, spec.maxSpeed);
 
-        if (v.drifting && Math.random() < 0.55) {
-          const rearX = v.x - newFwdX * (spec.length * 0.34);
-          const rearZ = v.z - newFwdZ * (spec.length * 0.34);
-          this.emitSmoke(rearX, v.y, rearZ, false);
+          const speedFactor = canFlyMode
+            ? Math.max(0.35, Math.min(1, Math.abs(fSpeed) / 14))
+            : Math.min(1, Math.abs(fSpeed) / (isBike ? 2.5 : 6.5));
+          const dirSign = fSpeed >= -0.2 ? 1 : -1;
+          const turnRate =
+            v.steerAngle * spec.steeringSpeed * speedFactor * dirSign * (!canFlyMode && input.handbrake ? 1.35 : 1.0);
+          v.heading += turnRate * dt;
+
+          const gripLambda = canFlyMode
+            ? 5.5
+            : input.handbrake
+              ? 2.2 * rainGripFactor
+              : (1 - spec.driftGrip) * 65 * rainGripFactor + 3.5;
+          latSpeed = THREE.MathUtils.damp(latSpeed, 0, gripLambda, dt);
+
+          v.drifting = !isBike && !canFlyMode && (Math.abs(latSpeed) > 3.8 || (input.handbrake && Math.abs(fSpeed) > 8));
+
+          const newFwdX = Math.sin(v.heading);
+          const newFwdZ = Math.cos(v.heading);
+          const newRightX = Math.cos(v.heading);
+          const newRightZ = -Math.sin(v.heading);
+
+          v.vx = newFwdX * fSpeed + newRightX * latSpeed;
+          v.vz = newFwdZ * fSpeed + newRightZ * latSpeed;
+          v.forwardSpeed = fSpeed;
+          v.pedalPhase += Math.abs(fSpeed) * dt * 1.45;
+
+          // Flight lift, climb (Space / climb > 0), and descent (Shift / climb < 0)
+          if (canFlyMode) {
+            const liftThreshold = isFlyingCar ? 15 : 18;
+            if (fSpeed > liftThreshold) {
+              if (climbInput > 0.1) {
+                v.vy = THREE.MathUtils.damp(v.vy, 17, 4.5, dt);
+              } else if (climbInput < -0.1) {
+                v.vy = THREE.MathUtils.damp(v.vy, -14, 4.5, dt);
+              } else if (v.y <= terrainFloorNow + 0.25 && fSpeed > (isFlyingCar ? 42 : 38) && input.throttle > 0.2) {
+                v.vy = 6.8;
+              } else if (v.y > terrainFloorNow + 0.35) {
+                v.vy = THREE.MathUtils.damp(v.vy, 0, 4.0, dt);
+              }
+            } else if (v.y > terrainFloorNow + 0.2) {
+              v.vy = THREE.MathUtils.damp(v.vy, -6.5, 2.5, dt);
+            }
+
+            if (v.y > 145) {
+              v.y = 145;
+              v.vy = Math.min(0, v.vy);
+            }
+            v.y += v.vy * dt;
+
+            const targetPlanePitch = THREE.MathUtils.clamp(-v.vy * 0.025, -0.35, 0.32);
+            const airFactor = v.y > terrainFloorNow + 0.45 ? 1.0 : 0.25;
+            const targetPlaneRoll = -v.steerAngle * 0.65 * airFactor;
+            v.pitch = THREE.MathUtils.damp(v.pitch, targetPlanePitch, 6, dt);
+            v.roll = THREE.MathUtils.damp(v.roll, targetPlaneRoll, 6, dt);
+          } else {
+            const targetPitch = -input.throttle * 0.045 + (v.braking ? 0.055 : 0);
+            const leanFactor = isBike || v.classId === 'motorcycle' ? -0.35 : -0.14;
+            const targetRoll = v.steerAngle * Math.min(1, Math.abs(fSpeed) / 14) * leanFactor;
+            v.pitch = THREE.MathUtils.damp(v.pitch, targetPitch, 9, dt);
+            v.roll = THREE.MathUtils.damp(v.roll, targetRoll, 9, dt);
+          }
+
+          if (v.drifting && Math.random() < 0.55) {
+            const rearX = v.x - newFwdX * (spec.length * 0.34);
+            const rearZ = v.z - newFwdZ * (spec.length * 0.34);
+            this.emitSmoke(rearX, v.y, rearZ, false);
+          }
         }
       } else {
         v.vx = THREE.MathUtils.damp(v.vx, 0, canFlyMode ? 1.4 : 3.5, dt);
@@ -883,7 +981,8 @@ export class VehicleManager {
         Math.abs(v.vy) < 0.01 &&
         Math.abs(v.pitch) < 0.005 &&
         Math.abs(v.roll) < 0.005 &&
-        (!isFlyingCar || Math.abs(v.wingProgress - (v.wingsDeployed ? 1 : 0)) < 0.005);
+        (!isFlyingCar || Math.abs(v.wingProgress - (v.wingsDeployed ? 1 : 0)) < 0.005) &&
+        (!isRobotCar || (Math.abs(v.robotProgress - (v.robotTransformed ? 1 : 0)) < 0.005 && v.robotRecoil < 0.01));
 
       if (!isResting) {
         // World border limits: ground vehicles stay within Mainland or Auroria;
@@ -976,10 +1075,10 @@ export class VehicleManager {
         v.rig.bodyGroup.rotation.x = v.pitch;
         v.rig.bodyGroup.rotation.z = v.roll;
 
-        const spinDelta = (v.forwardSpeed * dt) / spec.wheelRadius;
+        const spinDelta = v.robotProgress > 0.2 ? 0 : (v.forwardSpeed * dt) / spec.wheelRadius;
         for (let idx = 0; idx < v.rig.wheelPivots.length; idx++) {
           if (isPlane ? idx === 0 : v.classId === 'motorcycle' || isBike ? idx === 0 : idx < 2) {
-            v.rig.wheelPivots[idx].rotation.y = v.steerAngle;
+            v.rig.wheelPivots[idx].rotation.y = v.robotProgress > 0.2 ? 0 : v.steerAngle;
           }
         }
         for (let idx = 0; idx < v.rig.wheelSpinMeshes.length; idx++) {

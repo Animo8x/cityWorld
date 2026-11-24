@@ -18,6 +18,9 @@ import {
   Backpack,
   Eye,
   Plane,
+  Bot,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { HudSnapshot } from '../game/types';
 import { ROAD_SEGMENTS } from '../game/world/worldLayout';
@@ -26,6 +29,8 @@ import { getText } from '../i18n/translations';
 interface GameHUDProps {
   hud: HudSnapshot;
   touchEnabled: boolean;
+  buttonScale: number;
+  onAdjustButtonScale: (delta: number) => void;
   onToggleTouch: () => void;
   onOpenMap: () => void;
   onOpenPause: () => void;
@@ -37,6 +42,7 @@ interface GameHUDProps {
   onCycleWeapon: () => void;
   onToggleCamera: () => void;
   onToggleWings: () => void;
+  onToggleRobot: () => void;
 }
 
 /** Smoothly interpolates vehicle health color from pure white (100%) -> orange (45%) -> crimson red (0%) */
@@ -98,6 +104,8 @@ const VehicleDamageIcon: React.FC<{ hp: number; size?: 'sm' | 'md' }> = ({ hp, s
 export const GameHUD: React.FC<GameHUDProps> = ({
   hud,
   touchEnabled,
+  buttonScale,
+  onAdjustButtonScale,
   onToggleTouch,
   onOpenMap,
   onOpenPause,
@@ -109,9 +117,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onCycleWeapon,
   onToggleCamera,
   onToggleWings,
+  onToggleRobot,
 }) => {
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const t = getText(hud.language);
+  const hudScale = Math.min(1.25, Math.max(0.75, buttonScale));
+  const hs = (px: number) => Math.round(px * hudScale);
 
   const skyWaypointDist =
     (hud.isAirplane || hud.canDeployWings) && hud.customWaypoint
@@ -127,17 +138,22 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     y: 72 + ((wz - pz) / mapRadius) * 72,
   });
 
-  const renderUtilityButtons = (compactMobile: boolean) => (
+  const renderUtilityButtons = (compactMobile: boolean) => {
+    const btnFont = hs(compactMobile ? 10 : 12);
+    const padX = hs(compactMobile ? 8 : 12);
+    const padY = hs(compactMobile ? 4 : 6);
+    const iconSz = hs(compactMobile ? 14 : 16);
+    const subIconSz = hs(14);
+    return (
     <div className="flex flex-col items-center gap-1 pointer-events-auto">
       <div className="flex flex-wrap items-center justify-center gap-1">
         <button
           onClick={onOpenPhone}
-          className={`flex items-center gap-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black shadow-lg border border-emerald-200 cursor-pointer ${
-            compactMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs gap-1.5'
-          }`}
+          style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
+          className="flex items-center gap-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black shadow-lg border border-emerald-200 cursor-pointer"
           title={`${t.phone} (P)`}
         >
-          <Smartphone className={compactMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+          <Smartphone style={{ width: iconSz, height: iconSz }} />
           <span>{t.phone}</span>
           {hud.ownedVehicles.length > 0 && (
             <span className="px-1 rounded bg-slate-950/20 text-[9px] font-black tabular-nums">
@@ -148,42 +164,57 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
         <button
           onClick={onOpenBackpack}
-          className={`flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black shadow-lg border border-amber-200 cursor-pointer ${
-            compactMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs gap-1.5'
-          }`}
+          style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
+          className="flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black shadow-lg border border-amber-200 cursor-pointer"
           title={`${t.backpack} (B)`}
         >
-          <Backpack className={compactMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+          <Backpack style={{ width: iconSz, height: iconSz }} />
           <span>{t.backpack}</span>
         </button>
 
         <button
           onClick={onToggleCamera}
+          style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
           className={`flex items-center gap-1 rounded-lg border font-extrabold cursor-pointer shadow-lg ${
-            compactMobile ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1.5 text-[10px] md:text-xs'
-          } ${
             hud.firstPerson
               ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 border-cyan-200'
               : 'bg-slate-900/90 hover:bg-slate-800 text-slate-100 border-slate-700'
           }`}
           title="Toggle First-Person / Third-Person (C)"
         >
-          <Eye className="w-3.5 h-3.5" />
+          <Eye style={{ width: iconSz, height: iconSz }} />
           <span className="hidden sm:inline">{hud.firstPerson ? t.firstPersonView : t.thirdPersonView}</span>
         </button>
 
         {hud.canDeployWings && !compactMobile && (
           <button
             onClick={onToggleWings}
-            className={`flex items-center gap-1 rounded-lg border font-black cursor-pointer shadow-lg px-2.5 py-1.5 text-[10px] md:text-xs ${
+            style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
+            className={`flex items-center gap-1 rounded-lg border font-black cursor-pointer shadow-lg ${
               hud.wingsDeployed
                 ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 border-yellow-200'
                 : 'bg-slate-900/90 hover:bg-slate-800 text-amber-300 border-amber-500/60'
             }`}
             title="Deploy / Fold Flight Wings (X)"
           >
-            <Plane className="w-3.5 h-3.5" />
+            <Plane style={{ width: iconSz, height: iconSz }} />
             <span>{hud.wingsDeployed ? t.wingsFlying : t.wingsDeploy} (X)</span>
+          </button>
+        )}
+
+        {hud.canTransformRobot && !compactMobile && (
+          <button
+            onClick={onToggleRobot}
+            style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
+            className={`flex items-center gap-1 rounded-lg border font-black cursor-pointer shadow-lg ${
+              hud.isRobotTransformed
+                ? 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 border-cyan-200'
+                : 'bg-slate-900/90 hover:bg-slate-800 text-cyan-300 border-cyan-500/60'
+            }`}
+            title="Transform Robot / Car Mode (X)"
+          >
+            <Bot style={{ width: iconSz, height: iconSz }} />
+            <span>{hud.isRobotTransformed ? t.transformToCar : t.transformToRobot} (X)</span>
           </button>
         )}
 
@@ -191,29 +222,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <>
             <button
               onClick={onOpenMap}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-700 text-[10px] font-bold text-slate-100 cursor-pointer"
+              style={{ padding: `${padY}px ${hs(8)}px` }}
+              className="flex items-center gap-1 rounded-lg bg-slate-900/90 border border-slate-700 font-bold text-slate-100 cursor-pointer"
               title={t.map}
             >
-              <MapIcon className="w-3.5 h-3.5 text-sky-400" />
+              <MapIcon style={{ width: iconSz, height: iconSz }} className="text-sky-400" />
             </button>
             <button
               onClick={onOpenPause}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-700 text-[10px] font-bold text-slate-100 cursor-pointer"
+              style={{ padding: `${padY}px ${hs(8)}px` }}
+              className="flex items-center gap-1 rounded-lg bg-slate-900/90 border border-slate-700 font-bold text-slate-100 cursor-pointer"
               title={t.menu}
             >
-              <Pause className="w-3.5 h-3.5 text-slate-200" />
+              <Pause style={{ width: iconSz, height: iconSz }} className="text-slate-200" />
             </button>
           </>
         )}
 
         <button
           onClick={() => setDockCollapsed((v) => !v)}
-          className={`flex items-center gap-1 rounded-lg bg-slate-950/85 border border-slate-700 font-semibold text-slate-300 hover:text-white cursor-pointer ${
-            compactMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2.5 py-1.5 text-[10px] md:text-[11px]'
-          }`}
+          style={{ padding: `${padY}px ${hs(compactMobile ? 6 : 10)}px`, fontSize: hs(10) }}
+          className="flex items-center gap-1 rounded-lg bg-slate-950/85 border border-slate-700 font-semibold text-slate-300 hover:text-white cursor-pointer"
           aria-label="Toggle Extra Controls"
         >
-          {dockCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          {dockCollapsed ? (
+            <ChevronUp style={{ width: subIconSz, height: subIconSz }} />
+          ) : (
+            <ChevronDown style={{ width: subIconSz, height: subIconSz }} />
+          )}
           {!compactMobile && (
             <span className="hidden sm:inline">{dockCollapsed ? t.showBar : t.hideBar}</span>
           )}
@@ -221,67 +257,104 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       </div>
 
       {!dockCollapsed && (
-        <div className="flex items-center gap-1 bg-slate-950/90 border border-slate-700/80 px-2 py-1 rounded-lg shadow-xl">
+        <div className="flex flex-wrap items-center justify-center gap-1 bg-slate-950/90 border border-slate-700/80 px-2 py-1 rounded-lg shadow-xl">
           {!compactMobile && (
             <button
               onClick={onOpenMap}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-100 cursor-pointer"
+              style={{ padding: `${hs(4)}px ${hs(8)}px`, fontSize: hs(11) }}
+              className="flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 font-semibold text-slate-100 cursor-pointer"
               title={t.map}
             >
-              <MapIcon className="w-3.5 h-3.5 text-sky-400" />
+              <MapIcon style={{ width: subIconSz, height: subIconSz }} className="text-sky-400" />
               <span className="hidden sm:inline">{t.map}</span>
             </button>
           )}
           <button
             onClick={onAdvanceTime}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] md:text-[11px] font-semibold text-slate-100 cursor-pointer"
+            style={{ padding: `${hs(4)}px ${hs(8)}px`, fontSize: hs(11) }}
+            className="flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 font-semibold text-slate-100 cursor-pointer"
             title={t.time}
           >
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <Clock style={{ width: subIconSz, height: subIconSz }} className="text-amber-400" />
             <span className="hidden sm:inline">{t.time}</span>
           </button>
           <button
             onClick={onCycleWeather}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] md:text-[11px] font-semibold text-slate-100 cursor-pointer"
+            style={{ padding: `${hs(4)}px ${hs(8)}px`, fontSize: hs(11) }}
+            className="flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 font-semibold text-slate-100 cursor-pointer"
             title={t.weatherNames[hud.weather]}
           >
             {hud.weather === 'rain' ? (
-              <CloudRain className="w-3.5 h-3.5 text-sky-400" />
+              <CloudRain style={{ width: subIconSz, height: subIconSz }} className="text-sky-400" />
             ) : (
-              <Sun className="w-3.5 h-3.5 text-amber-300" />
+              <Sun style={{ width: subIconSz, height: subIconSz }} className="text-amber-300" />
             )}
             <span className="hidden sm:inline">{t.weatherNames[hud.weather]}</span>
           </button>
           <button
             onClick={onToggleTouch}
-            className={`p-1.5 rounded cursor-pointer ${
+            style={{ padding: `${hs(5)}px` }}
+            className={`rounded cursor-pointer ${
               touchEnabled ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
             }`}
             title="Touch Controls"
           >
-            <Gamepad2 className="w-3.5 h-3.5" />
+            <Gamepad2 style={{ width: subIconSz, height: subIconSz }} />
           </button>
           <button
             onClick={onToggleMute}
-            className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-100 cursor-pointer"
+            style={{ padding: `${hs(5)}px` }}
+            className="rounded bg-slate-800 hover:bg-slate-700 text-slate-100 cursor-pointer"
             title="Audio"
           >
-            {hud.muted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
+            {hud.muted ? (
+              <VolumeX style={{ width: subIconSz, height: subIconSz }} className="text-rose-400" />
+            ) : (
+              <Volume2 style={{ width: subIconSz, height: subIconSz }} className="text-emerald-400" />
+            )}
           </button>
+
+          {/* Live Button Size Controls (- / %) / + */}
+          <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-700 rounded px-1 py-0.5">
+            <button
+              onClick={() => onAdjustButtonScale(-0.05)}
+              disabled={buttonScale <= 0.701}
+              className="p-1 rounded hover:bg-slate-700 disabled:opacity-35 text-slate-200 cursor-pointer"
+              title={t.buttonSizeSmall}
+              aria-label={t.buttonSizeSmall}
+            >
+              <ZoomOut style={{ width: subIconSz, height: subIconSz }} className="text-sky-300" />
+            </button>
+            <span className="text-[10px] font-black tabular-nums text-amber-300 px-1">
+              {Math.round(buttonScale * 100)}%
+            </span>
+            <button
+              onClick={() => onAdjustButtonScale(0.05)}
+              disabled={buttonScale >= 1.399}
+              className="p-1 rounded hover:bg-slate-700 disabled:opacity-35 text-slate-200 cursor-pointer"
+              title={t.buttonSizeLarge}
+              aria-label={t.buttonSizeLarge}
+            >
+              <ZoomIn style={{ width: subIconSz, height: subIconSz }} className="text-emerald-300" />
+            </button>
+          </div>
+
           {!compactMobile && (
             <button
               onClick={onOpenPause}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-100 cursor-pointer"
+              style={{ padding: `${hs(4)}px ${hs(8)}px`, fontSize: hs(11) }}
+              className="flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 font-semibold text-slate-100 cursor-pointer"
               title={t.menu}
             >
-              <Pause className="w-3.5 h-3.5 text-slate-300" />
+              <Pause style={{ width: subIconSz, height: subIconSz }} className="text-slate-300" />
               <span className="hidden sm:inline">{t.menu}</span>
             </button>
           )}
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-2 sm:p-3 md:p-5">
@@ -337,6 +410,19 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   if (m.type === 'player') return null;
                   const pt = toMini(m.x, m.z);
                   if (pt.x < -6 || pt.x > 150 || pt.y < -6 || pt.y > 150) return null;
+                  if (m.type === 'remote_player') {
+                    return (
+                      <circle
+                        key={m.id}
+                        cx={pt.x}
+                        cy={pt.y}
+                        r={4.2}
+                        fill="#34d399"
+                        stroke="#ffffff"
+                        strokeWidth={1.1}
+                      />
+                    );
+                  }
                   const color =
                     m.type === 'police'
                       ? '#ef4444'
@@ -388,6 +474,36 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               <span className="text-slate-500">·</span>
               <span>{t.weatherNames[hud.weather]}</span>
             </div>
+
+            {hud.multiplayer.active && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[9px] sm:text-[10px] font-bold text-slate-100 bg-slate-950/90 border border-emerald-500/60 px-2 py-0.5 rounded-md w-fit shadow">
+                <span className="inline-flex items-center gap-1 text-emerald-400 font-black">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {t.mpOnlineLabel}
+                </span>
+                <span className="text-slate-500">·</span>
+                <span className="tabular-nums">
+                  {t.mpPlayersLabel}: {hud.multiplayer.playerCount}/{hud.multiplayer.maxPlayers}
+                </span>
+                <span className="text-slate-500">·</span>
+                <span className="tabular-nums text-sky-300">
+                  {t.mpPingLabel}: {hud.multiplayer.pingMs} ms
+                </span>
+                <span className="hidden md:inline text-slate-500">·</span>
+                <span className="hidden md:inline text-amber-300">{hud.multiplayer.playerName}</span>
+                {hud.multiplayer.sessionCode && (
+                  <span className="hidden lg:inline font-mono text-[9px] px-1 rounded bg-slate-800 text-slate-300">
+                    #{hud.multiplayer.sessionCode}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {hud.multiplayer.active && hud.multiplayer.inVehicleRole === 'passenger' && (
+              <div className="text-[9px] sm:text-[10px] font-extrabold text-cyan-200 bg-cyan-950/90 border border-cyan-500/60 px-2 py-0.5 rounded-md w-fit">
+                {t.mpPassengerRiding} {hud.multiplayer.driverName || 'Player'}
+              </div>
+            )}
           </div>
 
           {/* TOP-CENTER: Mission Objective / Event Banner (Desktop + Landscape) + Touch Quick Dock on sm+ */}
@@ -511,8 +627,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </div>
             </div>
 
-            {/* Equipped Weapon Badge */}
-            {!hud.inVehicle && (
+            {/* Equipped Weapon Badge (or Infinite Robot RPG Badge when Transformed) */}
+            {hud.isRobotTransformed ? (
+              <div className="flex items-center gap-1.5 bg-rose-950/90 border border-rose-400/80 px-2.5 py-1 rounded-md text-[10px] sm:text-[11px] font-black text-rose-200 shadow-lg">
+                <Crosshair className="w-3.5 h-3.5 text-rose-400" />
+                <span>{t.robotRpgInf}</span>
+              </div>
+            ) : !hud.inVehicle ? (
               <button
                 onClick={onCycleWeapon}
                 className="pointer-events-auto flex items-center gap-1 bg-slate-950/85 hover:bg-slate-900 border border-slate-700/80 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold text-slate-100 cursor-pointer"
@@ -524,7 +645,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   <span className="text-amber-300 tabular-nums">· {hud.ammo}</span>
                 )}
               </button>
-            )}
+            ) : null}
 
             {/* Mobile Vehicle Speedometer + White-to-Red Car Damage Icon */}
             {touchEnabled && hud.inVehicle && (
@@ -603,15 +724,19 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div className="flex items-end justify-between gap-2 md:gap-4">
           {/* Bottom-Left: Minimal Controls Reminder (desktop only) */}
           <div className="hidden lg:block text-[11px] font-medium text-slate-300 bg-slate-950/80 border border-slate-800 px-3 py-1.5 rounded-md">
-            {hud.canDeployWings
-              ? 'W/S Throttle · A/D Steer · X Wings · Space Climb · Shift Descend · C Camera · F Exit'
-              : hud.isAirplane
-                ? 'W/S Throttle · A/D Turn · Space Climb · Shift Descend · C Camera · F Exit'
-                : hud.inVehicle
-                  ? 'W/S Drive · A/D Steer · Space Handbrake · C Camera · L Lights · F Exit'
-                  : hud.isSwimming
-                    ? 'WASD Swim · C Camera · F Board Nearby Vehicle'
-                    : 'WASD Move · C Camera · V Punch · Click / G Shoot · 1-6 Weapon · F Steal · E Interact'}
+            {hud.canTransformRobot
+              ? hud.isRobotTransformed
+                ? 'W/S Walk · A/D Turn · Space Jump · Click / G Infinite RPG · X Car Mode · C Camera · F Exit'
+                : 'W/S Drive · A/D Steer · X Transform Robot · Space Handbrake · C Camera · F Exit'
+              : hud.canDeployWings
+                ? 'W/S Throttle · A/D Steer · X Wings · Space Climb · Shift Descend · C Camera · F Exit'
+                : hud.isAirplane
+                  ? 'W/S Throttle · A/D Turn · Space Climb · Shift Descend · C Camera · F Exit'
+                  : hud.inVehicle
+                    ? 'W/S Drive · A/D Steer · Space Handbrake · C Camera · L Lights · F Exit'
+                    : hud.isSwimming
+                      ? 'WASD Swim · C Camera · F Board Nearby Vehicle'
+                      : 'WASD Move · C Camera · V Punch · Click / G Shoot · 1-6 Weapon · F Steal · E Interact'}
           </div>
 
           {/* Bottom-Center: Contextual Prompt + Collapsible Compact Quick Dock */}

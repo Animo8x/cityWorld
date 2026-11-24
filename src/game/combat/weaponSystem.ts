@@ -228,6 +228,62 @@ export class WeaponSystem {
     r.mesh.lookAt(r.x + r.vx, r.y + r.vy, r.z + r.vz);
   }
 
+  public fireRobotInfiniteRpg(
+    ox: number,
+    oy: number,
+    oz: number,
+    aimDirX: number,
+    aimDirY: number,
+    aimDirZ: number,
+    targets: Array<{ id: string; x: number; y: number; z: number; radius: number }>,
+    onSound: () => void
+  ): boolean {
+    if (this.fireCooldown > 0) return false;
+    this.fireCooldown = 0.56;
+    onSound();
+
+    const horizLen = Math.hypot(aimDirX, aimDirZ) || 1;
+    const hAimX = aimDirX / horizLen;
+    const hAimZ = aimDirZ / horizLen;
+
+    let bestScore = Infinity;
+    let bestTarget: { x: number; y: number; z: number } | null = null;
+    for (const t of targets) {
+      const tx = t.x - ox;
+      const tz = t.z - oz;
+      const dist = Math.hypot(tx, tz);
+      if (dist > 140 || dist < 1.2) continue;
+      const dot = (tx / dist) * hAimX + (tz / dist) * hAimZ;
+      if (dot < 0.78) continue;
+      const score = dist * (1.2 - dot);
+      if (score < bestScore) {
+        bestScore = score;
+        bestTarget = t;
+      }
+    }
+
+    let dirX = aimDirX;
+    let dirY = aimDirY;
+    let dirZ = aimDirZ;
+    if (bestTarget) {
+      const dx = bestTarget.x - ox;
+      const dy = bestTarget.y + 0.9 - oy;
+      const dz = bestTarget.z - oz;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      dirX = dx / len;
+      dirY = dy / len;
+      dirZ = dz / len;
+    } else {
+      const len = Math.hypot(dirX, dirY, dirZ) || 1;
+      dirX /= len;
+      dirY /= len;
+      dirZ /= len;
+    }
+
+    this.launchRocket(ox, oy, oz, dirX, dirY, dirZ);
+    return true;
+  }
+
   public tryPlayerFire(
     ox: number,
     oy: number,

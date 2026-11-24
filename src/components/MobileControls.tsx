@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,6 +11,7 @@ import {
   Volume2,
   Zap,
   Plane,
+  Bot,
 } from 'lucide-react';
 import { Language, WeaponId } from '../game/types';
 import { getText } from '../i18n/translations';
@@ -28,10 +29,14 @@ export interface VirtualInputState {
 
 interface MobileControlsProps {
   language: Language;
+  buttonScale?: number;
   inVehicle: boolean;
+  inVehicleRole?: 'none' | 'driver' | 'passenger';
   isAirplane?: boolean;
   canDeployWings?: boolean;
   wingsDeployed?: boolean;
+  canTransformRobot?: boolean;
+  isRobotTransformed?: boolean;
   isSwimming: boolean;
   nearPedestrian: boolean;
   hasInteractionPrompt: boolean;
@@ -44,6 +49,7 @@ interface MobileControlsProps {
   onPressHorn: () => void;
   onPressHeadlights: () => void;
   onPressToggleWings?: () => void;
+  onPressToggleRobot?: () => void;
   onPressPunch: () => void;
   onFireChange: (firing: boolean) => void;
   onPressCycleWeapon: () => void;
@@ -51,10 +57,14 @@ interface MobileControlsProps {
 
 export const MobileControls: React.FC<MobileControlsProps> = ({
   language,
+  buttonScale = 1,
   inVehicle,
+  inVehicleRole = 'none',
   isAirplane = false,
   canDeployWings = false,
   wingsDeployed = false,
+  canTransformRobot = false,
+  isRobotTransformed = false,
   isSwimming,
   nearPedestrian,
   hasInteractionPrompt,
@@ -67,6 +77,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onPressHorn,
   onPressHeadlights,
   onPressToggleWings,
+  onPressToggleRobot,
   onPressPunch,
   onFireChange,
   onPressCycleWeapon,
@@ -85,8 +96,26 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
 
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const [sprintLocked, setSprintLocked] = useState(false);
+  const [isSm, setIsSm] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 640px)').matches : false
+  );
   const joyBaseRef = useRef<HTMLDivElement | null>(null);
   const joyPointerId = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 640px)');
+    const onChange = () => setIsSm(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const scale = Math.max(0.7, Math.min(1.4, buttonScale));
+  const sz = (mobilePx: number, smPx?: number) =>
+    Math.round((isSm && smPx !== undefined ? smPx : mobilePx) * scale);
+  const fs = (mobilePx: number, smPx?: number) =>
+    Math.max(8, Math.round((isSm && smPx !== undefined ? smPx : mobilePx) * scale));
 
   const emit = (patch: Partial<VirtualInputState>) => {
     inputRef.current = { ...inputRef.current, ...patch };
@@ -132,6 +161,19 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
       interactionLabel.includes('Hijack') ||
       interactionLabel.includes('سرقة'));
 
+  const joyOuter = sz(96, 128);
+  const joyInner = sz(36, 48);
+  const joyKnob = sz(40, 48);
+  const steerSize = sz(52, 64);
+  const steerIcon = sz(24, 28);
+  const secBtnSize = sz(36, 44);
+  const secBtnHeight = sz(36, 44);
+  const secIcon = sz(15, 17);
+  const footSecSize = sz(40, 48);
+  const priRoundSize = sz(52, 64);
+  const priSquareSize = sz(48, 56);
+  const priIcon = sz(16, 20);
+
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-20 pointer-events-none flex items-end justify-between gap-2 px-2.5 pb-2.5 sm:px-4 sm:pb-5 pt-1 select-none"
@@ -160,20 +202,27 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               resetJoystick();
             }}
             onPointerCancel={resetJoystick}
-            className="relative w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-slate-950/65 border-2 border-slate-500/70 flex items-center justify-center shadow-xl"
-            style={{ touchAction: 'none' }}
+            className="relative rounded-full bg-slate-950/65 border-2 border-slate-500/70 flex items-center justify-center shadow-xl"
+            style={{ width: joyOuter, height: joyOuter, touchAction: 'none' }}
           >
-            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full border border-slate-600/60" />
             <div
-              className="absolute w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-amber-400/90 border-2 border-white shadow-lg pointer-events-none"
+              className="rounded-full border border-slate-600/60"
+              style={{ width: joyInner, height: joyInner }}
+            />
+            <div
+              className="absolute rounded-full bg-amber-400/90 border-2 border-white shadow-lg pointer-events-none"
               style={{
+                width: joyKnob,
+                height: joyKnob,
                 transform: `translate(${knob.x}px, ${knob.y}px)`,
               }}
             />
           </div>
+        ) : inVehicleRole === 'passenger' ? (
+          <div />
         ) : (
           /* Vehicle Left / Right Steering Buttons */
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center" style={{ gap: sz(8, 12) }}>
             <button
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -185,10 +234,11 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ steer: 0 });
               }}
               onPointerCancel={() => emit({ steer: 0 })}
-              className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
+              style={{ width: steerSize, height: steerSize }}
+              className="rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
               aria-label="Steer Left"
             >
-              <ArrowLeft className="w-6 h-6 sm:w-7 sm:h-7" />
+              <ArrowLeft style={{ width: steerIcon, height: steerIcon }} />
             </button>
             <button
               onPointerDown={(e) => {
@@ -201,66 +251,108 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ steer: 0 });
               }}
               onPointerCancel={() => emit({ steer: 0 })}
-              className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
+              style={{ width: steerSize, height: steerSize }}
+              className="rounded-2xl bg-slate-950/80 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500/80 text-white flex items-center justify-center shadow-lg"
               aria-label="Steer Right"
             >
-              <ArrowRight className="w-6 h-6 sm:w-7 sm:h-7" />
+              <ArrowRight style={{ width: steerIcon, height: steerIcon }} />
             </button>
           </div>
         )}
       </div>
 
       {/* RIGHT CONTROL CLUSTER */}
-      <div className="pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2.5 max-w-[66vw]" style={{ touchAction: 'none' }}>
+      <div
+        className="pointer-events-auto flex flex-col items-end max-w-[66vw]"
+        style={{ gap: sz(6, 10), touchAction: 'none' }}
+      >
         {/* Secondary Quick Action Row */}
-        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+        <div className="flex flex-wrap items-center justify-end" style={{ gap: sz(6, 8) }}>
           {inVehicle ? (
             <>
-              <button
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  onPressHorn();
-                }}
-                className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-slate-950/80 active:bg-slate-700 border border-slate-600 text-slate-200 flex items-center justify-center shadow"
-                aria-label="Horn"
-              >
-                <Volume2 className="w-4 h-4" />
-              </button>
-              <button
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  onPressHeadlights();
-                }}
-                className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-slate-950/80 active:bg-yellow-500 active:text-slate-950 border border-slate-600 text-yellow-300 flex items-center justify-center shadow"
-                aria-label="Headlights"
-              >
-                <Lightbulb className="w-4 h-4" />
-              </button>
-              {canDeployWings && onPressToggleWings && (
-                <button
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    onPressToggleWings();
-                  }}
-                  className={`px-2.5 sm:px-3 h-9 sm:h-11 rounded-full font-black text-[10px] sm:text-xs flex items-center gap-1 shadow-lg border ${
-                    wingsDeployed
-                      ? 'bg-yellow-400 text-slate-950 border-yellow-200'
-                      : 'bg-slate-950/85 text-amber-300 border-amber-500/70'
-                  }`}
-                  aria-label="Toggle Wings"
-                >
-                  <Plane className="w-3.5 h-3.5" />
-                  <span>{wingsDeployed ? t.wingsFlying : t.wingsDeploy}</span>
-                </button>
+              {inVehicleRole !== 'passenger' && (
+                <>
+                  <button
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      onPressHorn();
+                    }}
+                    style={{ width: secBtnSize, height: secBtnSize }}
+                    className="rounded-full bg-slate-950/80 active:bg-slate-700 border border-slate-600 text-slate-200 flex items-center justify-center shadow"
+                    aria-label="Horn"
+                  >
+                    <Volume2 style={{ width: secIcon, height: secIcon }} />
+                  </button>
+                  <button
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      onPressHeadlights();
+                    }}
+                    style={{ width: secBtnSize, height: secBtnSize }}
+                    className="rounded-full bg-slate-950/80 active:bg-yellow-500 active:text-slate-950 border border-slate-600 text-yellow-300 flex items-center justify-center shadow"
+                    aria-label="Headlights"
+                  >
+                    <Lightbulb style={{ width: secIcon, height: secIcon }} />
+                  </button>
+                  {canDeployWings && onPressToggleWings && (
+                    <button
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        onPressToggleWings();
+                      }}
+                      style={{
+                        height: secBtnHeight,
+                        paddingInline: sz(10, 12),
+                        fontSize: fs(10, 12),
+                      }}
+                      className={`rounded-full font-black flex items-center gap-1 shadow-lg border ${
+                        wingsDeployed
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-200'
+                          : 'bg-slate-950/85 text-amber-300 border-amber-500/70'
+                      }`}
+                      aria-label="Toggle Wings"
+                    >
+                      <Plane style={{ width: secIcon, height: secIcon }} />
+                      <span>{wingsDeployed ? t.wingsFlying : t.wingsDeploy}</span>
+                    </button>
+                  )}
+                  {canTransformRobot && onPressToggleRobot && (
+                    <button
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        onPressToggleRobot();
+                      }}
+                      style={{
+                        height: secBtnHeight,
+                        paddingInline: sz(10, 12),
+                        fontSize: fs(10, 12),
+                      }}
+                      className={`rounded-full font-black flex items-center gap-1 shadow-lg border ${
+                        isRobotTransformed
+                          ? 'bg-cyan-400 text-slate-950 border-cyan-100'
+                          : 'bg-slate-950/85 text-cyan-300 border-cyan-500/70'
+                      }`}
+                      aria-label="Toggle Robot"
+                    >
+                      <Bot style={{ width: secIcon, height: secIcon }} />
+                      <span>{isRobotTransformed ? t.transformToCar : t.transformToRobot}</span>
+                    </button>
+                  )}
+                </>
               )}
               <button
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   onPressEnterExitVehicle();
                 }}
-                className="px-2.5 sm:px-3.5 h-9 sm:h-11 rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-extrabold text-[11px] sm:text-xs flex items-center gap-1 shadow-lg"
+                style={{
+                  height: secBtnHeight,
+                  paddingInline: sz(10, 14),
+                  fontSize: fs(11, 12),
+                }}
+                className="rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-extrabold flex items-center gap-1 shadow-lg"
               >
-                <Car className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> {t.exitCar}
+                <Car style={{ width: secIcon, height: secIcon }} /> {t.exitCar}
               </button>
             </>
           ) : (
@@ -272,9 +364,18 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     if (canEnterVehicle) onPressEnterExitVehicle();
                     else onPressInteract();
                   }}
-                  className="px-3 sm:px-4 h-10 sm:h-12 rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-black text-[11px] sm:text-xs flex items-center gap-1 shadow-lg border border-amber-200"
+                  style={{
+                    height: footSecSize,
+                    paddingInline: sz(12, 16),
+                    fontSize: fs(11, 12),
+                  }}
+                  className="rounded-full bg-amber-500 active:bg-amber-400 text-slate-950 font-black flex items-center gap-1 shadow-lg border border-amber-200"
                 >
-                  {canEnterVehicle ? <Car className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Hand className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  {canEnterVehicle ? (
+                    <Car style={{ width: secIcon, height: secIcon }} />
+                  ) : (
+                    <Hand style={{ width: secIcon, height: secIcon }} />
+                  )}
                   <span>{canEnterVehicle ? (isStealing ? t.steal : t.drive) : t.interact}</span>
                 </button>
               )}
@@ -284,13 +385,24 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     e.stopPropagation();
                     onPressCycleWeapon();
                   }}
-                  className="px-2.5 sm:px-3 h-10 sm:h-12 max-w-[140px] rounded-full bg-slate-950/85 active:bg-slate-800 border-2 border-slate-500 text-slate-100 text-[10px] sm:text-[11px] font-bold flex items-center gap-1 shadow"
+                  style={{
+                    height: footSecSize,
+                    paddingInline: sz(10, 12),
+                    maxWidth: sz(140, 175),
+                    fontSize: fs(10, 11),
+                  }}
+                  className="rounded-full bg-slate-950/85 active:bg-slate-800 border-2 border-slate-500 text-slate-100 font-bold flex items-center gap-1 shadow"
                   aria-label="Switch Weapon"
                 >
-                  <Repeat className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
+                  <Repeat
+                    className="text-amber-400 shrink-0"
+                    style={{ width: sz(12, 14), height: sz(12, 14) }}
+                  />
                   <span className="truncate">{t.weaponNames[weaponId]}</span>
                   {weaponId !== 'fists' && (
-                    <span className="text-[9px] sm:text-[10px] text-amber-300 tabular-nums shrink-0">{ammo}</span>
+                    <span className="text-amber-300 tabular-nums shrink-0" style={{ fontSize: fs(9, 10) }}>
+                      {ammo}
+                    </span>
                   )}
                 </button>
               )}
@@ -302,14 +414,15 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     setSprintLocked(next);
                     emit({ sprint: next });
                   }}
-                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center shadow ${
+                  style={{ width: footSecSize, height: footSecSize }}
+                  className={`rounded-full border-2 flex items-center justify-center shadow ${
                     sprintLocked
                       ? 'bg-sky-500 border-white text-slate-950'
                       : 'bg-slate-950/80 border-slate-600 text-slate-200'
                   }`}
                   aria-label="Sprint"
                 >
-                  <Zap className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <Zap style={{ width: sz(16, 20), height: sz(16, 20) }} />
                 </button>
               )}
             </>
@@ -317,10 +430,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
         </div>
 
         {/* Primary Action Row */}
-        {inVehicle ? (
-          <div className="flex items-end gap-1.5 sm:gap-2.5">
+        {inVehicle && inVehicleRole === 'passenger' ? null : inVehicle ? (
+          <div className="flex items-end" style={{ gap: sz(6, 10) }}>
             {isAirplane || wingsDeployed ? (
-              <div className="flex flex-col gap-1 sm:gap-1.5">
+              <div className="flex flex-col" style={{ gap: sz(4, 6) }}>
                 <button
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -332,7 +445,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     emit({ climb: 0 });
                   }}
                   onPointerCancel={() => emit({ climb: 0 })}
-                  className="w-12 h-9 sm:w-14 sm:h-11 rounded-xl bg-sky-600/90 active:bg-sky-400 active:text-slate-950 border-2 border-sky-300 text-white font-black text-[9px] sm:text-[10px] flex items-center justify-center shadow-lg"
+                  style={{ width: sz(48, 56), height: sz(36, 44), fontSize: fs(9, 10) }}
+                  className="rounded-xl bg-sky-600/90 active:bg-sky-400 active:text-slate-950 border-2 border-sky-300 text-white font-black flex items-center justify-center shadow-lg"
                 >
                   ▲ {t.climbUp}
                 </button>
@@ -347,11 +461,49 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     emit({ climb: 0 });
                   }}
                   onPointerCancel={() => emit({ climb: 0 })}
-                  className="w-12 h-9 sm:w-14 sm:h-11 rounded-xl bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500 text-amber-300 font-black text-[9px] sm:text-[10px] flex items-center justify-center shadow-lg"
+                  style={{ width: sz(48, 56), height: sz(36, 44), fontSize: fs(9, 10) }}
+                  className="rounded-xl bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500 text-amber-300 font-black flex items-center justify-center shadow-lg"
                 >
                   ▼ {t.descendDown}
                 </button>
               </div>
+            ) : isRobotTransformed ? (
+              <>
+                <button
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    onFireChange(true);
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    onFireChange(false);
+                  }}
+                  onPointerCancel={() => onFireChange(false)}
+                  style={{ width: priRoundSize, height: priRoundSize, fontSize: fs(9, 10) }}
+                  className="rounded-full bg-rose-600/95 active:bg-rose-400 active:text-slate-950 border-2 border-rose-200 text-white font-black flex flex-col items-center justify-center shadow-xl"
+                  aria-label="Fire Infinite RPG"
+                >
+                  <Crosshair style={{ width: priIcon, height: priIcon }} />
+                  <span>RPG ∞</span>
+                </button>
+                <button
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    emit({ handbrake: true });
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    emit({ handbrake: false });
+                  }}
+                  onPointerCancel={() => emit({ handbrake: false })}
+                  style={{ width: priSquareSize, height: priSquareSize, fontSize: fs(10, 11) }}
+                  className="rounded-2xl bg-slate-950/85 active:bg-cyan-400 active:text-slate-950 border-2 border-cyan-500/70 text-cyan-300 font-black flex items-center justify-center shadow-lg"
+                >
+                  {t.jump}
+                </button>
+              </>
             ) : (
               <button
                 onPointerDown={(e) => {
@@ -364,7 +516,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   emit({ handbrake: false });
                 }}
                 onPointerCancel={() => emit({ handbrake: false })}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-600 text-amber-400 font-black text-[10px] sm:text-[11px] flex items-center justify-center shadow-lg"
+                style={{ width: priSquareSize, height: priSquareSize, fontSize: fs(10, 11) }}
+                className="rounded-2xl bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-600 text-amber-400 font-black flex items-center justify-center shadow-lg"
               >
                 {t.drift}
               </button>
@@ -380,7 +533,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ throttle: 0 });
               }}
               onPointerCancel={() => emit({ throttle: 0 })}
-              className="w-12 h-14 sm:w-15 sm:h-16 rounded-2xl bg-rose-950/85 active:bg-rose-500 border-2 border-rose-500/80 text-white font-black text-[11px] sm:text-xs flex items-center justify-center shadow-lg"
+              style={{ width: sz(48, 60), height: sz(56, 64), fontSize: fs(11, 12) }}
+              className="rounded-2xl bg-rose-950/85 active:bg-rose-500 border-2 border-rose-500/80 text-white font-black flex items-center justify-center shadow-lg"
             >
               {t.brake}
             </button>
@@ -395,28 +549,30 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ throttle: 0 });
               }}
               onPointerCancel={() => emit({ throttle: 0 })}
-              className="w-14 h-16 sm:w-16 sm:h-20 rounded-2xl bg-emerald-600/90 active:bg-emerald-400 active:text-slate-950 border-2 border-emerald-300 text-white font-black text-[11px] sm:text-xs flex flex-col items-center justify-center shadow-lg"
+              style={{ width: sz(56, 64), height: sz(64, 80), fontSize: fs(11, 12) }}
+              className="rounded-2xl bg-emerald-600/90 active:bg-emerald-400 active:text-slate-950 border-2 border-emerald-300 text-white font-black flex flex-col items-center justify-center shadow-lg"
             >
-              <ChevronUp className="w-5 h-5 sm:w-6 sm:h-6" />
+              <ChevronUp style={{ width: sz(20, 24), height: sz(20, 24) }} />
               <span>{t.gas}</span>
             </button>
           </div>
         ) : (
-          <div className="flex items-end gap-1.5 sm:gap-2.5">
+          <div className="flex items-end" style={{ gap: sz(6, 10) }}>
             {!isSwimming && (nearPedestrian || weaponId === 'fists') && (
               <button
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   onPressPunch();
                 }}
-                className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full active:scale-95 border-2 font-black text-[10px] sm:text-[11px] flex flex-col items-center justify-center shadow-xl ${
+                style={{ width: priRoundSize, height: priRoundSize, fontSize: fs(10, 11) }}
+                className={`rounded-full active:scale-95 border-2 font-black flex flex-col items-center justify-center shadow-xl ${
                   nearPedestrian
                     ? 'bg-amber-500 border-amber-200 text-slate-950'
                     : 'bg-orange-600/90 border-orange-300 text-white'
                 }`}
                 aria-label="Punch"
               >
-                <Hand className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Hand style={{ width: priIcon, height: priIcon }} />
                 <span>{t.punch}</span>
               </button>
             )}
@@ -432,10 +588,11 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                   onFireChange(false);
                 }}
                 onPointerCancel={() => onFireChange(false)}
-                className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-rose-600/90 active:bg-rose-400 active:text-slate-950 border-2 border-rose-200 text-white font-black text-[10px] sm:text-[11px] flex flex-col items-center justify-center shadow-xl"
+                style={{ width: priRoundSize, height: priRoundSize, fontSize: fs(10, 11) }}
+                className="rounded-full bg-rose-600/90 active:bg-rose-400 active:text-slate-950 border-2 border-rose-200 text-white font-black flex flex-col items-center justify-center shadow-xl"
                 aria-label="Fire Weapon"
               >
-                <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Crosshair style={{ width: priIcon, height: priIcon }} />
                 <span>{t.fire}</span>
               </button>
             )}
@@ -450,9 +607,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                 emit({ jump: false });
               }}
               onPointerCancel={() => emit({ jump: false })}
-              className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500 text-white font-black text-[10px] sm:text-xs flex flex-col items-center justify-center shadow-xl"
+              style={{ width: priRoundSize, height: priRoundSize, fontSize: fs(10, 12) }}
+              className="rounded-full bg-slate-950/85 active:bg-amber-500 active:text-slate-950 border-2 border-slate-500 text-white font-black flex flex-col items-center justify-center shadow-xl"
             >
-              <ChevronUp className="w-4 h-4 sm:w-5 sm:h-5" />
+              <ChevronUp style={{ width: priIcon, height: priIcon }} />
               <span>{isSwimming ? t.swim : t.jump}</span>
             </button>
           </div>

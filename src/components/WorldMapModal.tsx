@@ -346,8 +346,10 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
                 }
                 const isDealer =
                   m.type === 'interior' && (m.interiorKind === 'dealership' || m.interiorKind === 'garage');
-                const color =
-                  m.type === 'police'
+                const isRemotePlayer = m.type === 'remote_player';
+                const color = isRemotePlayer
+                  ? '#34d399'
+                  : m.type === 'police'
                     ? '#ef4444'
                     : m.type === 'objective'
                       ? '#38bdf8'
@@ -373,19 +375,19 @@ export const WorldMapModal: React.FC<WorldMapModalProps> = ({ hud, onClose, onSe
                     <circle
                       cx={pt.x}
                       cy={pt.y}
-                      r={m.type === 'vehicle' ? 4 : isDealer ? 9 : 6}
+                      r={isRemotePlayer ? 8 : m.type === 'vehicle' ? 4 : isDealer ? 9 : 6}
                       fill={color}
-                      stroke={isDealer ? '#ffffff' : '#0f172a'}
-                      strokeWidth={isDealer ? 2 : 1.2}
+                      stroke={isDealer || isRemotePlayer ? '#ffffff' : '#0f172a'}
+                      strokeWidth={isDealer || isRemotePlayer ? 2.2 : 1.2}
                     />
                     {m.label && m.type !== 'vehicle' && (
                       <text
                         x={pt.x}
-                        y={pt.y - (isDealer ? 12 : 9)}
+                        y={pt.y - (isDealer || isRemotePlayer ? 12 : 9)}
                         textAnchor="middle"
-                        fill={isDealer ? '#7dd3fc' : '#f8fafc'}
-                        fontSize={isDealer ? '11' : '10'}
-                        fontWeight={isDealer ? '900' : '700'}
+                        fill={isRemotePlayer ? '#6ee7b7' : isDealer ? '#7dd3fc' : '#f8fafc'}
+                        fontSize={isDealer || isRemotePlayer ? '11' : '10'}
+                        fontWeight={isDealer || isRemotePlayer ? '900' : '700'}
                       >
                         {m.label}
                       </text>
