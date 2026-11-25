@@ -291,6 +291,11 @@ export class CityWorldEngine {
         this.player.setRidingPose('none', 0, 0);
         this.player.root.visible = !this.cameraCtrl.firstPerson;
       },
+      onSessionJoined: (isP2pHost) => {
+        if (!isP2pHost && this.phase === 'multiplayer_lobby') {
+          this.phase = 'playing';
+        }
+      },
     });
 
     if (!this.isSoftwareGl) {
@@ -1030,6 +1035,28 @@ export class CityWorldEngine {
 
   public async refreshMultiplayerSessions(): Promise<void> {
     await this.multiplayer.refreshSessions();
+  }
+
+  public async setMultiplayerServerUrl(url: string): Promise<boolean> {
+    return this.multiplayer.setServerUrl(url);
+  }
+
+  public async startP2PHost(sessionName: string, maxPlayers: number): Promise<{ ok: boolean; inviteCode: string }> {
+    this.sound.init();
+    return this.multiplayer.startP2PHost(sessionName, maxPlayers);
+  }
+
+  public async createP2PExtraInvite(): Promise<string> {
+    return this.multiplayer.createP2PExtraInvite();
+  }
+
+  public async acceptP2PReply(replyCode: string): Promise<{ ok: boolean; error?: string }> {
+    return this.multiplayer.acceptP2PReply(replyCode);
+  }
+
+  public async joinP2PWithInvite(inviteCode: string): Promise<{ ok: boolean; replyCode: string; error?: string }> {
+    this.sound.init();
+    return this.multiplayer.joinP2PWithInvite(inviteCode);
   }
 
   public async createMultiplayerSession(sessionName: string, maxPlayers: number): Promise<boolean> {

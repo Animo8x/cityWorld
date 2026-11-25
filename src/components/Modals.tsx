@@ -1330,6 +1330,11 @@ interface MultiplayerModalProps {
   hud: HudSnapshot;
   sessions: MultiplayerSessionSummary[];
   onRefreshSessions: () => void;
+  onSetServerUrl: (url: string) => Promise<boolean>;
+  onStartP2PHost: (name: string, maxPlayers: number) => Promise<{ ok: boolean; inviteCode: string }>;
+  onCreateP2PExtraInvite: () => Promise<string>;
+  onAcceptP2PReply: (replyCode: string) => Promise<{ ok: boolean; error?: string }>;
+  onJoinP2PWithInvite: (inviteCode: string) => Promise<{ ok: boolean; replyCode: string; error?: string }>;
   onCreateSession: (name: string, maxPlayers: number) => void;
   onJoinSession: (options: { sessionId?: string; sessionCode?: string }) => void;
   onLeaveSession: () => void;
@@ -1341,6 +1346,11 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   hud,
   sessions,
   onRefreshSessions,
+  onSetServerUrl,
+  onStartP2PHost,
+  onCreateP2PExtraInvite,
+  onAcceptP2PReply,
+  onJoinP2PWithInvite,
   onCreateSession,
   onJoinSession,
   onLeaveSession,
@@ -1354,50 +1364,104 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   const [roomName, setRoomName] = useState(isRtl ? 'غرفة CityWorld' : 'CityWorld Room');
   const [maxPlayers, setMaxPlayers] = useState(8);
   const [joinCode, setJoinCode] = useState('');
+  const [mpMode, setMpMode] = useState<'p2p' | 'server'>(() =>
+    hud.multiplayer.p2p.active || hud.multiplayer.isStandaloneMode ? 'p2p' : 'server'
+  );
+  const [serverInput, setServerInput] = useState(hud.multiplayer.serverUrl || '');
+  const [p2pInviteInput, setP2pInviteInput] = useState('');
+  const [p2pReplyInput, setP2pReplyInput] = useState('');
+  const [p2pFeedback, setP2pFeedback] = useState<string | null>(null);
+  const [copiedFlag, setCopiedFlag] = useState<'invite' | 'reply' | null>(null);
+
+  const copyText = (text: string, which: 'invite' | 'reply') => {
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+      } catch {
+        // ignore
+      }
+      ta.remove();
+    }
+    setCopiedFlag(which);
+    setTimeout(() => setCopiedFlag(null), 2000);
+  };
+
+  const effectiveTab = hud.multiplayer.p2p.active ? 'p2p' : mpMode;
 
   return (
-    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/92 flex items-center justify-center p-4">
-      <div className="w-full max-w-3xl bg-slate-900 border border-emerald-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/92 flex items-center justify-center p-3 sm:p-4">
+      <div className="w-full max-w-3xl bg-slate-900 border border-emerald-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="px-5 py-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 shrink-0">
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-white">{t.mpLobbyTitle}</h2>
-              <p className="text-xs text-slate-400">{t.mpLobbySub}</p>
+              <h2 className="text-base sm:text-lg font-black text-white">{t.mpLobbyTitle}</h2>
+              <p className="text-[11px] sm:text-xs text-slate-400">{t.mpLobbySub}</p>
             </div>
           </div>
           <button
             onClick={onCloseToGame}
-            className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-100 cursor-pointer shrink-0"
+            className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-100 cursor-pointer shrink-0"
           >
-            {t.mpBackToSingle}
+            {hud.multiplayer.active ? t.resume : t.mpBackToSingle}
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {hud.multiplayer.status === 'connecting' && (
+        {/* Transport Mode Tabs */}
+        <div className="flex gap-2 px-5 pt-2.5 border-b border-slate-800 bg-slate-950/60 overflow-x-auto">
+          <button
+            onClick={() => setMpMode('p2p')}
+            className={`px-3.5 py-2 text-xs font-black border-b-2 cursor-pointer shrink-0 ${
+              effectiveTab === 'p2p'
+                ? 'border-cyan-400 text-cyan-300'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            {t.mpTabP2P}
+          </button>
+          <button
+            onClick={() => setMpMode('server')}
+            className={`px-3.5 py-2 text-xs font-black border-b-2 cursor-pointer shrink-0 ${
+              effectiveTab === 'server'
+                ? 'border-emerald-400 text-emerald-300'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            {t.mpTabServer}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+          {hud.multiplayer.status === 'connecting' && !hud.multiplayer.p2p.active && (
             <div className="p-3.5 rounded-xl bg-sky-950/80 border border-sky-500/60 text-xs font-bold text-sky-200 flex items-center gap-2">
               <Wifi className="w-4 h-4 animate-pulse text-sky-400" />
               <span>{t.mpConnecting}</span>
             </div>
           )}
 
-          {hud.multiplayer.errorMessage && (
-            <div className="p-3.5 rounded-xl bg-rose-950/85 border border-rose-500/70 text-xs font-bold text-rose-200 flex flex-wrap items-center justify-between gap-2">
+          {hud.multiplayer.errorMessage && effectiveTab === 'server' && (
+            <div className="p-3.5 rounded-xl bg-amber-950/75 border border-amber-500/70 text-xs font-bold text-amber-100 flex flex-wrap items-center justify-between gap-2">
               <span>{hud.multiplayer.errorMessage}</span>
               <button
-                onClick={onCloseToGame}
-                className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black cursor-pointer"
+                onClick={() => setMpMode('p2p')}
+                className="px-3 py-1.5 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-[11px] font-black cursor-pointer"
               >
-                {t.mpBackToSingle}
+                {t.mpTabP2P}
               </button>
             </div>
           )}
 
-          {/* Player Name & Active Session Banner */}
-          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Player Name */}
+          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-bold text-slate-400">{t.mpPlayerNameLabel}</div>
               <div className="text-sm font-black text-emerald-400">
@@ -1432,7 +1496,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
           </div>
 
           {hud.multiplayer.active && (
-            <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-3">
+            <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-black text-emerald-300">
                   {hud.multiplayer.sessionName} · #{hud.multiplayer.sessionCode}
@@ -1442,139 +1506,351 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
                   {hud.multiplayer.pingMs} ms
                 </div>
               </div>
-              <button
-                onClick={onLeaveSession}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" /> {t.mpLeaveSession}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onCloseToGame}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer"
+                >
+                  {t.mpP2pEnterWorldBtn}
+                </button>
+                <button
+                  onClick={onLeaveSession}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" /> {t.mpLeaveSession}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Create Session & Join by Code */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                onCreateSession(roomName, maxPlayers);
-              }}
-              className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3"
-            >
-              <div className="flex items-center gap-2 text-xs font-black text-white">
-                <Plus className="w-4 h-4 text-emerald-400" />
-                <span>{t.mpCreateSession}</span>
+          {effectiveTab === 'p2p' ? (
+            <div className="space-y-4">
+              <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-[11px] font-semibold text-cyan-100 leading-relaxed">
+                {t.mpP2pInfo}
               </div>
-              <div>
-                <label className="text-[11px] text-slate-400 block mb-1">{t.mpSessionNameLabel}</label>
-                <input
-                  type="text"
-                  maxLength={28}
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] text-slate-400 block mb-1">{t.mpMaxPlayersLabel}</label>
-                <select
-                  value={maxPlayers}
-                  onChange={(e) => setMaxPlayers(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white"
-                >
-                  <option value={4}>4</option>
-                  <option value={8}>8 (Default)</option>
-                  <option value={12}>12</option>
-                  <option value={16}>16</option>
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="w-full py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer"
-              >
-                {t.mpCreateSession}
-              </button>
-            </form>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (joinCode.trim()) {
-                  onJoinSession({ sessionCode: joinCode.trim() });
-                }
-              }}
-              className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3 flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-black text-white">
-                  <Wifi className="w-4 h-4 text-sky-400" />
-                  <span>{t.mpJoinByCode}</span>
+              {(hud.multiplayer.p2p.error || p2pFeedback) && (
+                <div className="p-3 rounded-lg bg-rose-950/80 border border-rose-500/60 text-xs font-bold text-rose-200">
+                  {hud.multiplayer.p2p.error || p2pFeedback}
                 </div>
-                <div>
-                  <label className="text-[11px] text-slate-400 block mb-1">{t.mpSessionCodeLabel}</label>
-                  <input
-                    type="text"
-                    maxLength={8}
-                    dir="ltr"
-                    value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                    placeholder="CW1001"
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm font-mono font-black text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400"
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="w-full py-2.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-black cursor-pointer"
-              >
-                {t.mpJoinSession}
-              </button>
-            </form>
-          </div>
+              )}
 
-          {/* Open Sessions List */}
-          <div className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black text-white">{t.mpJoinSession}</h3>
-              <button
-                onClick={onRefreshSessions}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" /> {t.mpRefreshSessions}
-              </button>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* P2P Host Card */}
+                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-black text-cyan-300">
+                    <Plus className="w-4 h-4" />
+                    <span>{t.mpP2pHostTitle}</span>
+                  </div>
 
-            {sessions.length === 0 ? (
-              <div className="text-xs text-slate-400 py-3 text-center">{t.mpNoSessions}</div>
-            ) : (
-              <div className="space-y-2">
-                {sessions.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-900 border border-slate-800"
-                  >
-                    <div>
-                      <div className="text-xs font-extrabold text-white">
-                        {s.name}{' '}
-                        <span className="font-mono text-[10px] text-sky-400 px-1.5 py-0.5 rounded bg-slate-800">
-                          #{s.code}
-                        </span>
+                  {hud.multiplayer.p2p.role !== 'host' ? (
+                    <>
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">{t.mpSessionNameLabel}</label>
+                        <input
+                          type="text"
+                          maxLength={28}
+                          value={roomName}
+                          onChange={(e) => setRoomName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white"
+                        />
                       </div>
-                      <div className="text-[11px] text-slate-400">
-                        {t.mpPlayersLabel}: {s.playerCount}/{s.maxPlayers} · {s.region.toUpperCase()}
-                      </div>
+                      <button
+                        onClick={() => {
+                          setP2pFeedback(null);
+                          void onStartP2PHost(roomName, maxPlayers);
+                        }}
+                        className="w-full py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-black cursor-pointer"
+                      >
+                        {t.mpP2pHostBtn}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      {hud.multiplayer.p2p.gathering ? (
+                        <div className="text-xs font-bold text-sky-300 animate-pulse">{t.mpGenerating}</div>
+                      ) : hud.multiplayer.p2p.inviteCode ? (
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-amber-300 block">
+                            {t.mpP2pInviteLabel}
+                          </label>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              readOnly
+                              dir="ltr"
+                              value={hud.multiplayer.p2p.inviteCode}
+                              className="flex-1 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-200"
+                            />
+                            <button
+                              onClick={() => copyText(hud.multiplayer.p2p.inviteCode, 'invite')}
+                              className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black cursor-pointer shrink-0"
+                            >
+                              {copiedFlag === 'invite' ? t.mpCopiedBtn : t.mpCopyBtn}
+                            </button>
+                          </div>
+
+                          <label className="text-[11px] font-bold text-emerald-300 block pt-1">
+                            {t.mpP2pReplyInputLabel}
+                          </label>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              dir="ltr"
+                              value={p2pReplyInput}
+                              onChange={(e) => setP2pReplyInput(e.target.value)}
+                              placeholder="CW2:..."
+                              className="flex-1 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-[11px] font-mono text-white"
+                            />
+                            <button
+                              onClick={async () => {
+                                if (!p2pReplyInput.trim()) return;
+                                const res = await onAcceptP2PReply(p2pReplyInput.trim());
+                                if (res.ok) {
+                                  setP2pReplyInput('');
+                                  setP2pFeedback(null);
+                                } else {
+                                  setP2pFeedback(res.error || 'Invalid reply code');
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-black cursor-pointer shrink-0"
+                            >
+                              {t.mpP2pConnectPeerBtn}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => void onCreateP2PExtraInvite()}
+                          className="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-cyan-500/50 text-cyan-300 text-xs font-black cursor-pointer"
+                        >
+                          {t.mpP2pExtraInviteBtn}
+                        </button>
+                      )}
+
+                      <button
+                        onClick={onCloseToGame}
+                        className="w-full py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer"
+                      >
+                        {t.mpP2pEnterWorldBtn}
+                      </button>
                     </div>
+                  )}
+                </div>
+
+                {/* P2P Guest Join Card */}
+                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-black text-sky-300">
+                    <Wifi className="w-4 h-4" />
+                    <span>{t.mpP2pJoinTitle}</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[11px] text-slate-300 block">{t.mpP2pJoinInputLabel}</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={p2pInviteInput}
+                      onChange={(e) => setP2pInviteInput(e.target.value)}
+                      placeholder="CW1:..."
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
+                    />
                     <button
-                      onClick={() => onJoinSession({ sessionId: s.id })}
-                      disabled={s.playerCount >= s.maxPlayers}
-                      className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 text-xs font-black cursor-pointer shrink-0"
+                      onClick={async () => {
+                        if (!p2pInviteInput.trim()) return;
+                        setP2pFeedback(null);
+                        const res = await onJoinP2PWithInvite(p2pInviteInput.trim());
+                        if (!res.ok) {
+                          setP2pFeedback(res.error || 'Invalid invite code');
+                        }
+                      }}
+                      disabled={hud.multiplayer.p2p.gathering}
+                      className="w-full py-2.5 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 text-xs font-black cursor-pointer"
                     >
-                      {t.mpJoinSession}
+                      {hud.multiplayer.p2p.gathering ? t.mpGenerating : t.mpP2pGenReplyBtn}
                     </button>
                   </div>
-                ))}
+
+                  {hud.multiplayer.p2p.role === 'guest' && hud.multiplayer.p2p.replyCode && (
+                    <div className="space-y-1.5 pt-2 border-t border-slate-800">
+                      <label className="text-[11px] font-bold text-emerald-300 block">
+                        {t.mpP2pReplyOutputLabel}
+                      </label>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          readOnly
+                          dir="ltr"
+                          value={hud.multiplayer.p2p.replyCode}
+                          className="flex-1 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-200"
+                        />
+                        <button
+                          onClick={() => copyText(hud.multiplayer.p2p.replyCode, 'reply')}
+                          className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-black cursor-pointer shrink-0"
+                        >
+                          {copiedFlag === 'reply' ? t.mpCopiedBtn : t.mpCopyBtn}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <>
+              {/* Custom Server URL (helps standalone HTML / APK connect to a hosted server) */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void onSetServerUrl(serverInput);
+                }}
+                className="p-3.5 rounded-xl bg-slate-950/75 border border-slate-800 space-y-2"
+              >
+                <label className="text-[11px] font-bold text-slate-300 block">{t.mpServerUrlLabel}</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={serverInput}
+                    onChange={(e) => setServerInput(e.target.value)}
+                    placeholder={t.mpServerUrlPlaceholder}
+                    className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white placeholder:text-slate-500"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer shrink-0"
+                  >
+                    {t.mpServerConnectBtn}
+                  </button>
+                </div>
+              </form>
+
+              {/* Create Session & Join by Code */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    onCreateSession(roomName, maxPlayers);
+                  }}
+                  className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3"
+                >
+                  <div className="flex items-center gap-2 text-xs font-black text-white">
+                    <Plus className="w-4 h-4 text-emerald-400" />
+                    <span>{t.mpCreateSession}</span>
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">{t.mpSessionNameLabel}</label>
+                    <input
+                      type="text"
+                      maxLength={28}
+                      value={roomName}
+                      onChange={(e) => setRoomName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">{t.mpMaxPlayersLabel}</label>
+                    <select
+                      value={maxPlayers}
+                      onChange={(e) => setMaxPlayers(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white"
+                    >
+                      <option value={4}>4</option>
+                      <option value={8}>8 (Default)</option>
+                      <option value={12}>12</option>
+                      <option value={16}>16</option>
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer"
+                  >
+                    {t.mpCreateSession}
+                  </button>
+                </form>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (joinCode.trim()) {
+                      onJoinSession({ sessionCode: joinCode.trim() });
+                    }
+                  }}
+                  className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3 flex flex-col justify-between"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-black text-white">
+                      <Wifi className="w-4 h-4 text-sky-400" />
+                      <span>{t.mpJoinByCode}</span>
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">{t.mpSessionCodeLabel}</label>
+                      <input
+                        type="text"
+                        maxLength={8}
+                        dir="ltr"
+                        value={joinCode}
+                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                        placeholder="CW1001"
+                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm font-mono font-black text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-black cursor-pointer"
+                  >
+                    {t.mpJoinSession}
+                  </button>
+                </form>
+              </div>
+
+              {/* Open Sessions List */}
+              <div className="p-4 rounded-xl bg-slate-950/75 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black text-white">{t.mpJoinSession}</h3>
+                  <button
+                    onClick={onRefreshSessions}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-emerald-400" /> {t.mpRefreshSessions}
+                  </button>
+                </div>
+
+                {sessions.length === 0 ? (
+                  <div className="text-xs text-slate-400 py-3 text-center">{t.mpNoSessions}</div>
+                ) : (
+                  <div className="space-y-2">
+                    {sessions.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-900 border border-slate-800"
+                      >
+                        <div>
+                          <div className="text-xs font-extrabold text-white">
+                            {s.name}{' '}
+                            <span className="font-mono text-[10px] text-sky-400 px-1.5 py-0.5 rounded bg-slate-800">
+                              #{s.code}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            {t.mpPlayersLabel}: {s.playerCount}/{s.maxPlayers} · {s.region.toUpperCase()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => onJoinSession({ sessionId: s.id })}
+                          disabled={s.playerCount >= s.maxPlayers}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 text-xs font-black cursor-pointer shrink-0"
+                        >
+                          {t.mpJoinSession}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

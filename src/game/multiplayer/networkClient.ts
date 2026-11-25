@@ -1,5 +1,7 @@
 import type { ClientMessage, ServerMessage } from './protocol';
 
+const SERVER_URL_STORAGE_KEY = 'cityworld_mp_server_url_v1';
+
 export type NetworkClientEvents = {
   onOpen?: () => void;
   onMessage?: (msg: ServerMessage) => void;
@@ -7,6 +9,18 @@ export type NetworkClientEvents = {
   onError?: (reason: string) => void;
   onPingUpdate?: (pingMs: number) => void;
 };
+
+function normalizeServerOrigin(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  if (/^wss?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/^ws/i, 'http');
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
 
 export class NetworkClient {
   private ws: WebSocket | null = null;
@@ -24,10 +38,64 @@ export class NetworkClient {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
+  public static isDeviceOffline(): boolean {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  }
+
+  public static isStandaloneFileOrApk(): boolean {
+    if (typeof window === 'undefined') return false;
+    const proto = window.location.protocol;
+    const host = window.location.hostname;
+    return (
+      proto === 'file:' ||
+      proto === 'content:' ||
+      proto === 'capacitor:' ||
+      proto === 'ionic:' ||
+      host === 'appassets.androidplatform.net'
+    );
+  }
+
+  public static getCustomServerUrl(): string {
+    if (typeof window === 'undefined') return '';
+    try {
+      return window.localStorage.getItem(SERVER_URL_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  public static setCustomServerUrl(url: string): string {
+    const clean = normalizeServerOrigin(url);
+    try {
+      if (clean) {
+        window.localStorage.setItem(SERVER_URL_STORAGE_KEY, clean);
+      } else {
+        window.localStorage.removeItem(SERVER_URL_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return clean;
+  }
+
+  public static getHttpBaseUrl(): string | null {
+    if (typeof window === 'undefined') return null;
+    const custom = NetworkClient.getCustomServerUrl();
+    if (custom) return custom;
+    if (NetworkClient.isStandaloneFileOrApk()) return null;
+    return window.location.origin;
+  }
+
+  public static getWsUrl(): string | null {
+    const httpBase = NetworkClient.getHttpBaseUrl();
+    if (!httpBase) return null;
+    const wsBase = httpBase.replace(/^http/i, 'ws');
+    return `${wsBase}/ws/multiplayer`;
+  }
+
   public static canAttemptOnlineConnection(): boolean {
     if (typeof window === 'undefined') return false;
-    if (window.location.protocol === 'file:') return false;
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    if (NetworkClient.isDeviceOffline()) return false;
     return typeof WebSocket !== 'undefined';
   }
 
@@ -41,8 +109,12 @@ export class NetworkClient {
       return Promise.reject(new Error(msg));
     }
 
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/ws/multiplayer`;
+    const wsUrl = NetworkClient.getWsUrl();
+    if (!wsUrl) {
+      const msg = 'standalone_no_server';
+      this.events.onError?.(msg);
+      return Promise.reject(new Error(msg));
+    }
 
     return new Promise((resolve, reject) => {
       let settled = false;

@@ -12,10 +12,11 @@ import type {
 import type { WorldVehicle } from '../vehicles/vehiclePhysics';
 import { NetworkClient } from './networkClient';
 import { NetworkPlayerSystem } from './networkPlayer';
+import { P2PNetworkTransport } from './p2pNetwork';
 import { computeSeatWorldPose, PassengerSystem, type NearbySharedVehicleCandidate } from './passengerSystem';
 import { INTEREST_FULL_RATE_RADIUS, quantize } from './protocol';
-import type { RemoteAnimState, RemotePlayerState, ServerMessage, SharedVehicleState } from './protocol';
-import { SessionManager } from './sessionManager';
+import type { ClientMessage, RemoteAnimState, ServerMessage, SharedVehicleState } from './protocol';
+import { SessionManager, type SessionFetchReason } from './sessionManager';
 import { VehicleNetworkSystem, type RemoteVehicleVisual } from './vehicleNetwork';
 import type * as THREE from 'three';
 
@@ -50,6 +51,7 @@ export interface MultiplayerCallbacks {
   onBanner: (title: string, subtitle: string, kind: 'success' | 'fail' | 'info') => void;
   onHudChanged: () => void;
   onForceExitVehicle: () => void;
+  onSessionJoined?: (isP2pHost: boolean) => void;
 }
 
 export class MultiplayerManager {
@@ -59,6 +61,8 @@ export class MultiplayerManager {
   public readonly passenger = new PassengerSystem();
 
   private client: NetworkClient;
+  private p2p: P2PNetworkTransport;
+  private transportMode: 'none' | 'ws' | 'p2p' = 'none';
   private cb: MultiplayerCallbacks;
   private active = false;
   private sendAccum = 0;
@@ -72,14 +76,38 @@ export class MultiplayerManager {
     this.vehicles = new VehicleNetworkSystem(scene);
     this.client = new NetworkClient({
       onMessage: (msg) => this.handleServerMessage(msg),
-      onClose: () => this.handleDisconnected(),
-      onError: () => this.handleConnectionError(),
+      onClose: () => {
+        if (this.transportMode === 'ws') this.handleDisconnected();
+      },
+      onError: () => {
+        if (this.transportMode === 'ws') this.handleConnectionError();
+      },
       onPingUpdate: () => this.cb.onHudChanged(),
+    });
+    this.p2p = new P2PNetworkTransport({
+      onServerMessage: (msg) => this.handleServerMessage(msg),
+      onPingUpdate: () => this.cb.onHudChanged(),
+      onDisconnected: () => {
+        if (this.transportMode === 'p2p') this.handleDisconnected();
+      },
+      onUiUpdate: () => this.cb.onHudChanged(),
     });
   }
 
   public isActive(): boolean {
     return this.active && this.sessions.status === 'connected';
+  }
+
+  private sendNet(msg: ClientMessage): boolean {
+    if (this.transportMode === 'p2p') {
+      return this.p2p.send(msg);
+    }
+    return this.client.send(msg);
+  }
+
+  private isNetConnected(): boolean {
+    if (this.transportMode === 'p2p') return this.p2p.isConnected();
+    return this.client.isConnected();
   }
 
   public getHudState(): MultiplayerHudState {
@@ -96,13 +124,16 @@ export class MultiplayerManager {
       sessionName: s?.name ?? null,
       playerCount: s?.playerCount ?? 0,
       maxPlayers: s?.maxPlayers ?? 8,
-      pingMs: this.client.pingMs,
+      pingMs: this.transportMode === 'p2p' ? this.p2p.pingMs : this.client.pingMs,
       region: this.sessions.region,
       networkQuality: this.sessions.networkQuality,
       mpAudioEnabled: this.sessions.mpAudioEnabled,
       inVehicleRole: this.passenger.role,
       passengerSeatIndex: this.passenger.seatIndex,
       driverName: this.passenger.driverName,
+      serverUrl: this.sessions.serverUrl,
+      isStandaloneMode: NetworkClient.isStandaloneFileOrApk(),
+      p2p: this.p2p.getUiSnapshot(),
     };
   }
 
@@ -114,21 +145,28 @@ export class MultiplayerManager {
     this.sessions.errorMessage = null;
     const res = await this.sessions.fetchSessions();
     if (!res.ok) {
-      const lang = this.cb.getLanguage();
-      this.sessions.errorMessage =
-        lang === 'ar'
-          ? 'لا يوجد اتصال بالإنترنت. لا يمكن تشغيل اللاعب الجماعي حاليًا.'
-          : 'No internet connection or server unavailable. Multiplayer cannot be started right now.';
+      this.applyFetchError(res.reason);
     }
     this.cb.onHudChanged();
     return res.ok;
   }
 
+  public async setServerUrl(url: string): Promise<boolean> {
+    this.sessions.setServerUrl(url);
+    return this.refreshSessions();
+  }
+
   public async createSession(sessionName: string, maxPlayers: number): Promise<boolean> {
-    if (!NetworkClient.canAttemptOnlineConnection()) {
-      this.setOfflineError();
+    if (NetworkClient.isDeviceOffline()) {
+      this.setOfflineError('offline_device');
       return false;
     }
+    if (!NetworkClient.getWsUrl()) {
+      this.setOfflineError('standalone_no_server');
+      return false;
+    }
+    this.p2p.disconnect();
+    this.transportMode = 'ws';
     this.sessions.status = 'connecting';
     this.sessions.errorMessage = null;
     this.cb.onHudChanged();
@@ -147,16 +185,22 @@ export class MultiplayerManager {
       this.client.send({ type: 'set_net_quality', quality: this.sessions.networkQuality });
       return true;
     } catch {
-      this.setOfflineError();
+      this.setOfflineError('server_unreachable');
       return false;
     }
   }
 
   public async joinSession(options: { sessionId?: string; sessionCode?: string }): Promise<boolean> {
-    if (!NetworkClient.canAttemptOnlineConnection()) {
-      this.setOfflineError();
+    if (NetworkClient.isDeviceOffline()) {
+      this.setOfflineError('offline_device');
       return false;
     }
+    if (!NetworkClient.getWsUrl()) {
+      this.setOfflineError('standalone_no_server');
+      return false;
+    }
+    this.p2p.disconnect();
+    this.transportMode = 'ws';
     this.sessions.status = 'connecting';
     this.sessions.errorMessage = null;
     this.cb.onHudChanged();
@@ -174,17 +218,75 @@ export class MultiplayerManager {
       this.client.send({ type: 'set_net_quality', quality: this.sessions.networkQuality });
       return true;
     } catch {
-      this.setOfflineError();
+      this.setOfflineError('server_unreachable');
       return false;
     }
   }
 
+  public async startP2PHost(sessionName: string, maxPlayers: number): Promise<{ ok: boolean; inviteCode: string }> {
+    this.client.disconnect('switch_to_p2p');
+    this.transportMode = 'p2p';
+    this.sessions.errorMessage = null;
+    this.sessions.status = 'connecting';
+    this.cb.onHudChanged();
+
+    const res = await this.p2p.startHostRoom({
+      sessionName,
+      maxPlayers,
+      customName: this.sessions.customName || undefined,
+      skinId: this.cb.getPlayerSkin(),
+      weaponId: this.cb.getPlayerWeapon(),
+    });
+    if (!res.ok) {
+      this.transportMode = 'none';
+      this.sessions.status = 'error';
+      this.sessions.errorMessage = res.error ?? 'Failed to start P2P room.';
+      this.cb.onHudChanged();
+    }
+    return { ok: res.ok, inviteCode: res.inviteCode };
+  }
+
+  public async createP2PExtraInvite(): Promise<string> {
+    return this.p2p.createNewInviteSlot();
+  }
+
+  public async acceptP2PReply(replyCode: string): Promise<{ ok: boolean; error?: string }> {
+    return this.p2p.acceptGuestReply(replyCode);
+  }
+
+  public async joinP2PWithInvite(inviteCode: string): Promise<{ ok: boolean; replyCode: string; error?: string }> {
+    this.client.disconnect('switch_to_p2p');
+    this.transportMode = 'p2p';
+    this.sessions.errorMessage = null;
+    this.sessions.status = 'connecting';
+    this.cb.onHudChanged();
+
+    const res = await this.p2p.joinWithInvite({
+      inviteCode,
+      customName: this.sessions.customName || undefined,
+      skinId: this.cb.getPlayerSkin(),
+      weaponId: this.cb.getPlayerWeapon(),
+      quality: this.sessions.networkQuality,
+    });
+    if (!res.ok) {
+      this.transportMode = 'none';
+      this.sessions.status = 'error';
+      this.sessions.errorMessage = res.error ?? 'Invalid invite code.';
+      this.cb.onHudChanged();
+    }
+    return res;
+  }
+
   public leaveSession(): void {
-    if (this.client.isConnected()) {
+    if (this.transportMode === 'ws' && this.client.isConnected()) {
       this.client.send({ type: 'leave_session' });
+    } else if (this.transportMode === 'p2p' && this.p2p.isConnected()) {
+      this.p2p.send({ type: 'leave_session' });
     }
     this.cleanupSessionEntities();
     this.client.disconnect('leave');
+    this.p2p.disconnect();
+    this.transportMode = 'none';
     this.sessions.clearSession();
     this.sessions.errorMessage = null;
     this.active = false;
@@ -194,7 +296,7 @@ export class MultiplayerManager {
   public changeName(newName: string): void {
     const saved = this.sessions.setCustomName(newName);
     if (this.isActive()) {
-      this.client.send({ type: 'name_change', name: saved });
+      this.sendNet({ type: 'name_change', name: saved });
     } else if (saved) {
       this.sessions.assignedPlayerName = saved;
     }
@@ -208,7 +310,7 @@ export class MultiplayerManager {
   }): void {
     this.sessions.updateSettings(patch);
     if (patch.networkQuality && this.isActive()) {
-      this.client.send({ type: 'set_net_quality', quality: patch.networkQuality });
+      this.sendNet({ type: 'set_net_quality', quality: patch.networkQuality });
     }
     this.cb.onHudChanged();
   }
@@ -220,7 +322,7 @@ export class MultiplayerManager {
     }
     this.activeDrivenVehicleId = v.id;
     this.passenger.setSeated('driver', v.id, 0, this.sessions.assignedPlayerName);
-    this.client.send({
+    this.sendNet({
       type: 'vehicle_enter',
       vehicleId: v.id,
       classId: v.classId,
@@ -248,7 +350,7 @@ export class MultiplayerManager {
     const v = candidate.vehicle.state;
     const driverName = v.driverId ? this.players.getPlayerName(v.driverId) : null;
     this.passenger.setSeated('passenger', v.id, candidate.openSeatIndex, driverName);
-    this.client.send({
+    this.sendNet({
       type: 'vehicle_enter',
       vehicleId: v.id,
       classId: v.classId,
@@ -276,7 +378,7 @@ export class MultiplayerManager {
       exitY = v.y;
     }
     if (this.isActive()) {
-      this.client.send({
+      this.sendNet({
         type: 'vehicle_exit',
         vehicleId: this.passenger.vehicleId,
         x: exitX,
@@ -297,7 +399,7 @@ export class MultiplayerManager {
       this.passenger.reset();
     }
     if (!this.isActive()) return;
-    this.client.send({
+    this.sendNet({
       type: 'vehicle_exit',
       vehicleId,
       x,
@@ -316,7 +418,7 @@ export class MultiplayerManager {
     weaponId: WeaponId
   ): void {
     if (!this.isActive()) return;
-    this.client.send({
+    this.sendNet({
       type: 'world_event',
       event: 'fire',
       x: ox,
@@ -331,12 +433,12 @@ export class MultiplayerManager {
 
   public notifyExplosion(x: number, y: number, z: number): void {
     if (!this.isActive()) return;
-    this.client.send({ type: 'world_event', event: 'explosion', x, y, z });
+    this.sendNet({ type: 'world_event', event: 'explosion', x, y, z });
   }
 
   public notifyHorn(x: number, y: number, z: number): void {
     if (!this.isActive()) return;
-    this.client.send({ type: 'world_event', event: 'horn', x, y, z });
+    this.sendNet({ type: 'world_event', event: 'horn', x, y, z });
   }
 
   public findNearbyRemoteVehicle(px: number, py: number, pz: number): NearbySharedVehicleCandidate | null {
@@ -379,7 +481,7 @@ export class MultiplayerManager {
   }
 
   public update(dt: number, isNight: boolean, activeVehicle: WorldVehicle | null): void {
-    if (!this.isActive()) return;
+    if (!this.isActive() || !this.isNetConnected()) return;
     const nowMs = performance.now();
 
     // Update remote vehicle visuals and interpolated positions
@@ -448,7 +550,7 @@ export class MultiplayerManager {
                     : 'walk'
                   : 'idle';
 
-      this.client.send({
+      this.sendNet({
         type: 'player_state',
         x: quantize(pose.x, 2),
         y: quantize(pose.y, 2),
@@ -462,7 +564,7 @@ export class MultiplayerManager {
       });
 
       if (activeVehicle && this.passenger.role === 'driver' && activeVehicle.id === this.activeDrivenVehicleId) {
-        this.client.send({
+        this.sendNet({
           type: 'vehicle_state',
           vehicleId: activeVehicle.id,
           x: quantize(activeVehicle.x, 2),
@@ -492,26 +594,43 @@ export class MultiplayerManager {
     }
   }
 
-  private setOfflineError(): void {
+  private applyFetchError(reason: SessionFetchReason): void {
+    const lang = this.cb.getLanguage();
+    if (reason === 'offline_device') {
+      this.sessions.errorMessage =
+        lang === 'ar'
+          ? 'جهازك غير متصل بالإنترنت حالياً.'
+          : 'Your device appears to be offline.';
+    } else if (reason === 'standalone_no_server') {
+      this.sessions.errorMessage =
+        lang === 'ar'
+          ? 'أنت تفتح اللعبة من ملف HTML / تطبيق APK محلي (لا يحتوي على سيرفر مركزي). استخدم «اللعب المباشر P2P» بالأسفل للعب أونلاين مع أصدقائك بدون سيرفر، أو أضف رابط سيرفر.'
+          : 'Running from standalone HTML / APK (no built-in central server). Use Direct P2P Online below to play with friends without a server, or enter a server URL.';
+    } else {
+      this.sessions.errorMessage =
+        lang === 'ar'
+          ? 'تعذر الوصول لسيرفر الغرف المركزي (قد يتطلب تسجيل دخول أو لم يُضف رابط سيرفر). يمكنك اللعب فوراً عبر «اللعب المباشر P2P» بالأسفل!'
+          : 'Central server unreachable. You can still play online immediately using Direct P2P below!';
+    }
+  }
+
+  private setOfflineError(reason: SessionFetchReason = 'server_unreachable'): void {
     this.active = false;
     this.sessions.status = 'error';
-    const lang = this.cb.getLanguage();
-    this.sessions.errorMessage =
-      lang === 'ar'
-        ? 'لا يوجد اتصال بالإنترنت. لا يمكن تشغيل اللاعب الجماعي حاليًا.'
-        : 'No internet connection or server unavailable. Multiplayer cannot be started right now.';
+    this.applyFetchError(reason);
     this.cb.onHudChanged();
   }
 
   private handleConnectionError(): void {
     this.cleanupSessionEntities();
-    this.setOfflineError();
+    this.setOfflineError('server_unreachable');
   }
 
   private handleDisconnected(): void {
     const wasActive = this.active;
     this.cleanupSessionEntities();
     this.sessions.clearSession();
+    this.transportMode = 'none';
     this.active = false;
     if (wasActive) {
       const lang = this.cb.getLanguage();
@@ -519,10 +638,10 @@ export class MultiplayerManager {
       this.sessions.errorMessage =
         lang === 'ar'
           ? 'انقطع الاتصال بسيرفر اللاعب الجماعي.'
-          : 'Disconnected from CityWorld Online server.';
+          : 'Disconnected from CityWorld Online session.';
       this.cb.onBanner(
         lang === 'ar' ? 'انقطع الاتصال' : 'Connection Lost',
-        lang === 'ar' ? 'انقطع الاتصال بسيرفر اللاعب الجماعي.' : 'Multiplayer connection lost.',
+        lang === 'ar' ? 'انقطع الاتصال بالجلسة.' : 'Multiplayer connection lost.',
         'fail'
       );
     }
@@ -563,6 +682,7 @@ export class MultiplayerManager {
             : `Joined ${msg.session.name} (Code: ${msg.session.code})`,
           'success'
         );
+        this.cb.onSessionJoined?.(this.transportMode === 'p2p' && this.p2p.getUiSnapshot().role === 'host');
         this.cb.onHudChanged();
         return;
       }
@@ -690,6 +810,7 @@ export class MultiplayerManager {
 
   public dispose(): void {
     this.client.disconnect('dispose');
+    this.p2p.disconnect();
     this.players.dispose();
     this.vehicles.dispose();
   }

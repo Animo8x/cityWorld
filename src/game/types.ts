@@ -251,6 +251,17 @@ export interface MultiplayerHudState {
   inVehicleRole: 'none' | 'driver' | 'passenger';
   passengerSeatIndex: number;
   driverName: string | null;
+  serverUrl: string;
+  isStandaloneMode: boolean;
+  p2p: {
+    active: boolean;
+    role: 'none' | 'host' | 'guest';
+    inviteCode: string;
+    replyCode: string;
+    connectedPeers: number;
+    gathering: boolean;
+    error: string | null;
+  };
 }
 
 export interface HudSnapshot {

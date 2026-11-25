@@ -229,6 +229,22 @@ export default function App() {
           onRefreshSessions={() => {
             void engineRef.current?.refreshMultiplayerSessions();
           }}
+          onSetServerUrl={(url) =>
+            engineRef.current?.setMultiplayerServerUrl(url) ?? Promise.resolve(false)
+          }
+          onStartP2PHost={(name, maxP) =>
+            engineRef.current?.startP2PHost(name, maxP) ?? Promise.resolve({ ok: false, inviteCode: '' })
+          }
+          onCreateP2PExtraInvite={() =>
+            engineRef.current?.createP2PExtraInvite() ?? Promise.resolve('')
+          }
+          onAcceptP2PReply={(replyCode) =>
+            engineRef.current?.acceptP2PReply(replyCode) ?? Promise.resolve({ ok: false })
+          }
+          onJoinP2PWithInvite={(inviteCode) =>
+            engineRef.current?.joinP2PWithInvite(inviteCode) ??
+            Promise.resolve({ ok: false, replyCode: '' })
+          }
           onCreateSession={(name, maxP) => {
             void engineRef.current?.createMultiplayerSession(name, maxP);
           }}

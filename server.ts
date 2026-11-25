@@ -25,6 +25,18 @@ async function startServer(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  // Allow standalone CityWorld.html (file://) and Android APK WebViews to reach API routes when hosted
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (_req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   const httpServer = http.createServer(app);
   const mpServer = new CityWorldMultiplayerServer();
   mpServer.registerRoutes(app);

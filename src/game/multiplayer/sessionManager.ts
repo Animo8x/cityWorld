@@ -12,6 +12,8 @@ import {
   saveStoredMpSettings,
 } from './playerNameSystem';
 
+export type SessionFetchReason = 'ok' | 'offline_device' | 'standalone_no_server' | 'server_unreachable';
+
 export class SessionManager {
   public status: MultiplayerConnectionStatus = 'offline';
   public errorMessage: string | null = null;
@@ -25,12 +27,18 @@ export class SessionManager {
   public networkQuality: NetworkQualityMode;
   public region: ServerRegionId;
   public mpAudioEnabled: boolean;
+  public serverUrl: string = NetworkClient.getCustomServerUrl();
 
   constructor() {
     const stored = loadStoredMpSettings();
     this.networkQuality = stored.networkQuality;
     this.region = stored.region;
     this.mpAudioEnabled = stored.mpAudioEnabled;
+  }
+
+  public setServerUrl(url: string): string {
+    this.serverUrl = NetworkClient.setCustomServerUrl(url);
+    return this.serverUrl;
   }
 
   public setCustomName(rawName: string): string {
@@ -59,30 +67,40 @@ export class SessionManager {
     return 0.066; // 15 Hz balanced
   }
 
-  public async fetchSessions(): Promise<{ ok: boolean; sessions: MultiplayerSessionSummary[] }> {
-    if (!NetworkClient.canAttemptOnlineConnection()) {
+  public async fetchSessions(): Promise<{
+    ok: boolean;
+    reason: SessionFetchReason;
+    sessions: MultiplayerSessionSummary[];
+  }> {
+    if (NetworkClient.isDeviceOffline()) {
       this.sessions = [];
-      return { ok: false, sessions: [] };
+      return { ok: false, reason: 'offline_device', sessions: [] };
+    }
+
+    const httpBase = NetworkClient.getHttpBaseUrl();
+    if (!httpBase) {
+      this.sessions = [];
+      return { ok: false, reason: 'standalone_no_server', sessions: [] };
     }
 
     this.loadingSessions = true;
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => ctrl.abort(), 5000);
     try {
-      const res = await fetch('/api/multiplayer/sessions', { signal: ctrl.signal });
+      const res = await fetch(`${httpBase}/api/multiplayer/sessions`, { signal: ctrl.signal });
       clearTimeout(timer);
       if (!res.ok) {
         this.loadingSessions = false;
-        return { ok: false, sessions: [] };
+        return { ok: false, reason: 'server_unreachable', sessions: [] };
       }
       const data = (await res.json()) as { ok?: boolean; sessions?: MultiplayerSessionSummary[] };
       this.sessions = Array.isArray(data.sessions) ? data.sessions : [];
       this.loadingSessions = false;
-      return { ok: true, sessions: this.sessions };
+      return { ok: true, reason: 'ok', sessions: this.sessions };
     } catch {
       clearTimeout(timer);
       this.loadingSessions = false;
-      return { ok: false, sessions: [] };
+      return { ok: false, reason: 'server_unreachable', sessions: [] };
     }
   }
 
