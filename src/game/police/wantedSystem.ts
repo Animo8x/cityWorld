@@ -39,6 +39,24 @@ export interface PoliceUnit {
   officer: PoliceOfficer;
 }
 
+export interface PoliceJet {
+  id: string;
+  root: THREE.Group;
+  thrusterLeft: THREE.Mesh;
+  thrusterRight: THREE.Mesh;
+  beaconMesh: THREE.Mesh;
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  speed: number;
+  active: boolean;
+  fireCooldown: number;
+  orbitSign: number;
+  altitudeOffset: number;
+  breakingAway: boolean;
+}
+
 export class WantedSystem {
   public stars = 0;
   public heatScore = 0;
@@ -48,9 +66,11 @@ export class WantedSystem {
   public nearestPoliceDist = 9999;
 
   public units: PoliceUnit[] = [];
+  public jets: PoliceJet[] = [];
   private scene: THREE.Scene;
   private strobeTimer = 0;
-  private poolSize = 3; // Balanced max 3 active police cruisers so gameplay stays intense & smooth
+  private poolSize = 6; // Supports 1 (1★), 4 (2★ = 2x), 5 (3-4★ realistic), 6 (5★)
+  private jetPoolSize = 3; // Supports 2 Fighter Jets at 4★ and 3 at 5★
   private disposables: Array<{ dispose: () => void }> = [];
 
   constructor(scene: THREE.Scene) {
@@ -136,6 +156,137 @@ export class WantedSystem {
         },
       });
     }
+
+    // Shared Military Fighter Jet geometries & materials (4-5 Stars Air Support)
+    const jetBodyGeo = new THREE.BoxGeometry(1.35, 0.95, 7.6);
+    const jetNoseGeo = new THREE.ConeGeometry(0.68, 2.8, 6);
+    jetNoseGeo.rotateX(Math.PI / 2);
+    const jetCanopyGeo = new THREE.BoxGeometry(0.76, 0.55, 2.2);
+    const jetWingGeo = new THREE.BoxGeometry(8.6, 0.14, 2.6);
+    const jetTailWingGeo = new THREE.BoxGeometry(4.0, 0.12, 1.3);
+    const jetFinGeo = new THREE.BoxGeometry(0.14, 1.45, 1.4);
+    const jetPodGeo = new THREE.CylinderGeometry(0.13, 0.13, 1.7, 6);
+    jetPodGeo.rotateX(Math.PI / 2);
+    const jetNozzleGeo = new THREE.CylinderGeometry(0.28, 0.34, 0.85, 8);
+    jetNozzleGeo.rotateX(Math.PI / 2);
+    const jetFlameGeo = new THREE.ConeGeometry(0.32, 1.8, 8);
+    jetFlameGeo.rotateX(-Math.PI / 2);
+    const jetBeaconGeo = new THREE.BoxGeometry(0.35, 0.25, 0.35);
+
+    const jetHullMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.45, metalness: 0.55 });
+    const jetTrimMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.5 });
+    const jetCanopyMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.35,
+      roughness: 0.15,
+      metalness: 0.7,
+    });
+    const jetMissileMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.4 });
+    const jetFlameMat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+    const jetBeaconMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      emissive: 0xef4444,
+      emissiveIntensity: 2.5,
+    });
+
+    this.disposables.push(
+      jetBodyGeo,
+      jetNoseGeo,
+      jetCanopyGeo,
+      jetWingGeo,
+      jetTailWingGeo,
+      jetFinGeo,
+      jetPodGeo,
+      jetNozzleGeo,
+      jetFlameGeo,
+      jetBeaconGeo,
+      jetHullMat,
+      jetTrimMat,
+      jetCanopyMat,
+      jetMissileMat,
+      jetFlameMat,
+      jetBeaconMat
+    );
+
+    for (let i = 0; i < this.jetPoolSize; i++) {
+      const jetRoot = new THREE.Group();
+      const body = new THREE.Mesh(jetBodyGeo, jetHullMat);
+      const nose = new THREE.Mesh(jetNoseGeo, jetTrimMat);
+      nose.position.set(0, -0.05, 5.1);
+
+      const canopy = new THREE.Mesh(jetCanopyGeo, jetCanopyMat);
+      canopy.position.set(0, 0.62, 1.5);
+
+      const wings = new THREE.Mesh(jetWingGeo, jetHullMat);
+      wings.position.set(0, -0.08, -0.4);
+
+      const tailWing = new THREE.Mesh(jetTailWingGeo, jetTrimMat);
+      tailWing.position.set(0, 0.05, -3.2);
+
+      const finL = new THREE.Mesh(jetFinGeo, jetTrimMat);
+      finL.position.set(-0.55, 0.85, -3.1);
+      finL.rotation.z = 0.24;
+
+      const finR = new THREE.Mesh(jetFinGeo, jetTrimMat);
+      finR.position.set(0.55, 0.85, -3.1);
+      finR.rotation.z = -0.24;
+
+      const podL = new THREE.Mesh(jetPodGeo, jetMissileMat);
+      podL.position.set(-2.35, -0.24, 0.1);
+      const podR = new THREE.Mesh(jetPodGeo, jetMissileMat);
+      podR.position.set(2.35, -0.24, 0.1);
+
+      const nozzleL = new THREE.Mesh(jetNozzleGeo, darkMat);
+      nozzleL.position.set(-0.36, -0.05, -4.0);
+      const nozzleR = new THREE.Mesh(jetNozzleGeo, darkMat);
+      nozzleR.position.set(0.36, -0.05, -4.0);
+
+      const thrusterLeft = new THREE.Mesh(jetFlameGeo, jetFlameMat);
+      thrusterLeft.position.set(-0.36, -0.05, -5.25);
+      const thrusterRight = new THREE.Mesh(jetFlameGeo, jetFlameMat);
+      thrusterRight.position.set(0.36, -0.05, -5.25);
+
+      const beaconMesh = new THREE.Mesh(jetBeaconGeo, jetBeaconMat);
+      beaconMesh.position.set(0, 0.6, -2.5);
+
+      jetRoot.add(
+        body,
+        nose,
+        canopy,
+        wings,
+        tailWing,
+        finL,
+        finR,
+        podL,
+        podR,
+        nozzleL,
+        nozzleR,
+        thrusterLeft,
+        thrusterRight,
+        beaconMesh
+      );
+      jetRoot.visible = false;
+      scene.add(jetRoot);
+
+      this.jets.push({
+        id: `military_jet_${i}`,
+        root: jetRoot,
+        thrusterLeft,
+        thrusterRight,
+        beaconMesh,
+        x: 0,
+        y: 60,
+        z: 0,
+        heading: 0,
+        speed: 58,
+        active: false,
+        fireCooldown: 2.2 + i * 1.1,
+        orbitSign: i % 2 === 0 ? 1 : -1,
+        altitudeOffset: 38 + i * 6,
+        breakingAway: false,
+      });
+    }
   }
 
   public addCrimeHeat(amount: number): void {
@@ -185,6 +336,10 @@ export class WantedSystem {
       u.rig.root.visible = false;
       u.officer.deployed = false;
       u.officer.root.visible = false;
+    }
+    for (const j of this.jets) {
+      j.active = false;
+      j.root.visible = false;
     }
   }
 
@@ -270,12 +425,37 @@ export class WantedSystem {
     return { killedOfficer: false };
   }
 
-  private getDesiredPoliceCount(): number {
-    // 1 Star -> 1 car | 2-3 Stars -> 2 cars | 4-5 Stars -> 3 cars (balanced!)
+  public getDesiredPoliceCount(): number {
+    // 1★ -> 1 car (same as classic)
+    // 2★ -> 4 cars (2x classic 2-star count)
+    // 3★ -> 5 cars (balanced realistic escalation)
+    // 4★ -> 5 cars (+ 2 military fighter jets)
+    // 5★ -> 6 cars (+ 3 military fighter jets)
     if (this.stars <= 0) return 0;
     if (this.stars === 1) return 1;
-    if (this.stars <= 3) return 2;
+    if (this.stars === 2) return 4;
+    if (this.stars <= 4) return 5;
+    return 6;
+  }
+
+  public getDesiredJetCount(): number {
+    if (this.stars < 4) return 0;
+    if (this.stars === 4) return 2;
     return 3;
+  }
+
+  public getChaseMaxSpeed(): number {
+    // 1★ & 2★ keep exact classic speed; 3★+ starts realistic faster pursuit
+    if (this.stars <= 1) return 23.4;
+    if (this.stars === 2) return 26.8;
+    if (this.stars === 3) return 35.5;
+    if (this.stars === 4) return 39.0;
+    return 42.5;
+  }
+
+  public getJetRpgHitProbability(): number {
+    if (this.stars < 4) return 0;
+    return this.stars >= 5 ? 0.02 : 0.012;
   }
 
   private spawnUnitOutOfView(u: PoliceUnit, px: number, pz: number, camDirX: number, camDirZ: number): void {
@@ -305,6 +485,22 @@ export class WantedSystem {
     u.officer.deployed = false;
     u.officer.hp = 70;
     u.officer.root.visible = false;
+  }
+
+  private spawnJetInSky(j: PoliceJet, idx: number, px: number, py: number, pz: number): void {
+    const angle = (idx / this.jetPoolSize) * Math.PI * 2 + Math.random() * 0.6;
+    const spawnDist = 145 + idx * 24;
+    j.x = px + Math.cos(angle) * spawnDist;
+    j.z = pz + Math.sin(angle) * spawnDist;
+    j.y = Math.max(groundHeightAt(j.x, j.z), py) + j.altitudeOffset;
+    j.heading = Math.atan2(px - j.x, pz - j.z);
+    j.speed = this.stars >= 5 ? 62 : 56;
+    j.fireCooldown = 1.6 + idx * 1.15;
+    j.breakingAway = false;
+    j.active = true;
+    j.root.visible = true;
+    j.root.position.set(j.x, j.y, j.z);
+    j.root.rotation.set(0, j.heading, 0);
   }
 
   public applyCruiserDamage(
@@ -342,7 +538,16 @@ export class WantedSystem {
       dz: number,
       hitPlayer: boolean
     ) => void,
-    onWantedEvaded?: () => void
+    onWantedEvaded?: () => void,
+    onJetFireRpg?: (
+      ox: number,
+      oy: number,
+      oz: number,
+      isDirectHit: boolean,
+      targetX: number,
+      targetY: number,
+      targetZ: number
+    ) => void
   ): void {
     this.strobeTimer += dt;
     this.nearestPoliceDist = 9999;
@@ -352,6 +557,9 @@ export class WantedSystem {
     }
 
     const desiredCount = this.getDesiredPoliceCount();
+    const desiredJetCount = this.getDesiredJetCount();
+    const maxChaseSpeed = this.getChaseMaxSpeed();
+    const steerRate = this.stars >= 3 ? 3.15 : 2.6;
     let anyUnitHasSight = false;
 
     for (let i = 0; i < this.units.length; i++) {
@@ -463,11 +671,10 @@ export class WantedSystem {
         let angleDiff = desiredHeading - u.heading;
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        u.heading += THREE.MathUtils.clamp(angleDiff, -2.6 * dt, 2.6 * dt);
+        u.heading += THREE.MathUtils.clamp(angleDiff, -steerRate * dt, steerRate * dt);
 
-        const maxChaseSpeed = 20 + this.stars * 3.4;
         const desiredSpeed = dist > 9 ? maxChaseSpeed : 0;
-        u.speed = THREE.MathUtils.damp(u.speed, desiredSpeed, 3.4, dt);
+        u.speed = THREE.MathUtils.damp(u.speed, desiredSpeed, this.stars >= 3 ? 4.0 : 3.4, dt);
         u.vx = Math.sin(u.heading) * u.speed;
         u.vz = Math.cos(u.heading) * u.speed;
 
@@ -484,7 +691,7 @@ export class WantedSystem {
 
         u.ramCooldown = Math.max(0, u.ramCooldown - dt);
         if (dist < 3.4 && Math.abs(playerY - u.y) < 3 && u.ramCooldown <= 0 && u.speed > 5) {
-          u.ramCooldown = 1.8;
+          u.ramCooldown = this.stars >= 3 ? 1.45 : 1.8;
           onPlayerRamDamage(6 + this.stars * 2);
         }
       } else {
@@ -511,6 +718,86 @@ export class WantedSystem {
       }
     }
 
+    // Military Fighter Jets (Stars 4 & 5 Air Strikes with RPG Missiles)
+    const jetHitProb = this.getJetRpgHitProbability();
+    for (let i = 0; i < this.jets.length; i++) {
+      const jet = this.jets[i];
+      if (i < desiredJetCount) {
+        if (!jet.active) {
+          this.spawnJetInSky(jet, i, playerX, playerY, playerZ);
+        }
+      } else if (jet.active) {
+        jet.active = false;
+        jet.root.visible = false;
+        continue;
+      }
+
+      if (!jet.active) continue;
+
+      const jdx = playerX - jet.x;
+      const jdz = playerZ - jet.z;
+      const jDist = Math.hypot(jdx, jdz);
+
+      // Jets maintain air visual lock if within 190m; speeding beyond lets evade timer tick
+      if (jDist < 190) {
+        anyUnitHasSight = true;
+      } else if (jDist > 360 && !this.isSearching) {
+        this.spawnJetInSky(jet, i, playerX, playerY, playerZ);
+      }
+
+      // Approach -> Fire RPG Pass -> Breakaway to 125m -> Turn back for next attack pass
+      if (!jet.breakingAway && jDist < 34) {
+        jet.breakingAway = true;
+      } else if (jet.breakingAway && jDist >= 125) {
+        jet.breakingAway = false;
+      }
+
+      const baseTargetHeading = Math.atan2(jdx, jdz);
+      const desiredHeading = jet.breakingAway
+        ? baseTargetHeading + Math.PI + jet.orbitSign * 0.35
+        : baseTargetHeading;
+      let angleDiff = desiredHeading - jet.heading;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      const turn = THREE.MathUtils.clamp(angleDiff, -2.0 * dt, 2.0 * dt);
+      jet.heading += turn;
+
+      jet.speed = THREE.MathUtils.damp(jet.speed, this.stars >= 5 ? 62 : 56, 2.5, dt);
+      jet.x += Math.sin(jet.heading) * jet.speed * dt;
+      jet.z += Math.cos(jet.heading) * jet.speed * dt;
+
+      const targetAlt = Math.max(groundHeightAt(jet.x, jet.z), playerY) + jet.altitudeOffset;
+      const diveDip = !jet.breakingAway && jDist < 120 && jDist > 34 ? -6.5 : 0;
+      jet.y = THREE.MathUtils.damp(jet.y, targetAlt + diveDip, 2.4, dt);
+
+      jet.root.position.set(jet.x, jet.y, jet.z);
+      const bankRoll = THREE.MathUtils.clamp(-turn / Math.max(0.001, dt) * 0.42, -0.68, 0.68);
+      const pitch = diveDip < 0 ? 0.14 : -0.04;
+      jet.root.rotation.set(pitch, jet.heading, bankRoll, 'YXZ');
+
+      const flamePulse = 0.85 + Math.sin(this.strobeTimer * 35 + i) * 0.25;
+      jet.thrusterLeft.scale.set(1, flamePulse, 1);
+      jet.thrusterRight.scale.set(1, flamePulse, 1);
+      const strobe = Math.floor(this.strobeTimer * 6 + i) % 2 === 0;
+      (jet.beaconMesh.material as THREE.MeshStandardMaterial).emissiveIntensity = strobe ? 3.2 : 0.3;
+
+      // Fire RPG missile during approach attack passes (1.2% hit chance at 4★, 2% hit chance at 5★)
+      jet.fireCooldown -= dt;
+      if (!jet.breakingAway && jet.fireCooldown <= 0 && jDist >= 34 && jDist <= 155) {
+        const fwdDot =
+          (Math.sin(jet.heading) * jdx + Math.cos(jet.heading) * jdz) / Math.max(1, jDist);
+        if (fwdDot > 0.45) {
+          jet.fireCooldown = this.stars >= 5 ? 2.5 + Math.random() * 1.2 : 3.3 + Math.random() * 1.4;
+          const isDirectHit = Math.random() < jetHitProb;
+          if (onJetFireRpg) {
+            onJetFireRpg(jet.x, jet.y - 1.1, jet.z, isDirectHit, playerX, playerY, playerZ);
+          }
+        } else {
+          jet.fireCooldown = 0.35;
+        }
+      }
+    }
+
     if (anyUnitHasSight) {
       this.isSearching = false;
       this.evadeTimer = Math.max(0, this.evadeTimer - dt * 2);
@@ -529,6 +816,9 @@ export class WantedSystem {
       this.scene.remove(u.rig.root);
       this.scene.remove(u.officer.root);
       u.rig.dispose();
+    });
+    this.jets.forEach((j) => {
+      this.scene.remove(j.root);
     });
     this.disposables.forEach((d) => d.dispose());
   }

@@ -45,6 +45,11 @@ interface RpgRocket {
   vy: number;
   vz: number;
   age: number;
+  fromJet: boolean;
+  homingHit: boolean;
+  targetX: number;
+  targetY: number;
+  targetZ: number;
 }
 
 export class WeaponSystem {
@@ -112,7 +117,7 @@ export class WeaponSystem {
     const flameMat = new THREE.MeshBasicMaterial({ color: 0xfb923c });
     this.disposables.push(bodyGeo, coneGeo, flameGeo, bodyMat, coneMat, flameMat);
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12; i++) {
       const grp = new THREE.Group();
       const b = new THREE.Mesh(bodyGeo, bodyMat);
       const c = new THREE.Mesh(coneGeo, coneMat);
@@ -132,6 +137,11 @@ export class WeaponSystem {
         vy: 0,
         vz: 0,
         age: 0,
+        fromJet: false,
+        homingHit: false,
+        targetX: 0,
+        targetY: 0,
+        targetZ: 0,
       });
     }
   }
@@ -216,12 +226,62 @@ export class WeaponSystem {
     this.rocketCursor = (this.rocketCursor + 1) % this.rockets.length;
     const speed = 44;
     r.active = true;
+    r.fromJet = false;
+    r.homingHit = false;
     r.x = ox + dx * 0.9;
     r.y = oy + dy * 0.9;
     r.z = oz + dz * 0.9;
     r.vx = dx * speed;
     r.vy = dy * speed;
     r.vz = dz * speed;
+    r.age = 0;
+    r.mesh.visible = true;
+    r.mesh.position.set(r.x, r.y, r.z);
+    r.mesh.lookAt(r.x + r.vx, r.y + r.vy, r.z + r.vz);
+  }
+
+  public launchJetRocket(
+    ox: number,
+    oy: number,
+    oz: number,
+    isDirectHit: boolean,
+    targetX: number,
+    targetY: number,
+    targetZ: number
+  ): void {
+    const r = this.rockets[this.rocketCursor];
+    this.rocketCursor = (this.rocketCursor + 1) % this.rockets.length;
+    let aimX = targetX;
+    let aimY = targetY + 0.7;
+    let aimZ = targetZ;
+
+    if (!isDirectHit) {
+      // Near-miss explosion outside 12..24m blast danger zone so ONLY exact hit probability destroys player's car
+      const angle = Math.random() * Math.PI * 2;
+      const missRadius = 12 + Math.random() * 12;
+      aimX = targetX + Math.cos(angle) * missRadius;
+      aimZ = targetZ + Math.sin(angle) * missRadius;
+      aimY = groundHeightAt(aimX, aimZ) + 0.2;
+    }
+
+    const dx = aimX - ox;
+    const dy = aimY - oy;
+    const dz = aimZ - oz;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const speed = isDirectHit ? 68 : 60;
+
+    r.active = true;
+    r.fromJet = true;
+    r.homingHit = isDirectHit;
+    r.targetX = aimX;
+    r.targetY = aimY;
+    r.targetZ = aimZ;
+    r.x = ox + (dx / len) * 1.4;
+    r.y = oy + (dy / len) * 1.4;
+    r.z = oz + (dz / len) * 1.4;
+    r.vx = (dx / len) * speed;
+    r.vy = (dy / len) * speed;
+    r.vz = (dz / len) * speed;
     r.age = 0;
     r.mesh.visible = true;
     r.mesh.position.set(r.x, r.y, r.z);
@@ -390,7 +450,8 @@ export class WeaponSystem {
     colliders: ColliderBox[],
     dynamicTargets: Array<{ x: number; y: number; z: number; radius: number }>,
     onRocketTrail: (x: number, y: number, z: number) => void,
-    onRocketDetonate: (x: number, y: number, z: number) => void
+    onRocketDetonate: (x: number, y: number, z: number, fromJet?: boolean, homingHit?: boolean) => void,
+    playerTarget?: { x: number; y: number; z: number }
   ): void {
     if (this.fireCooldown > 0) {
       this.fireCooldown = Math.max(0, this.fireCooldown - dt);
@@ -400,7 +461,20 @@ export class WeaponSystem {
     for (const r of this.rockets) {
       if (!r.active) continue;
       r.age += dt;
-      r.vy -= 1.4 * dt; // Slight gravity arc
+      if (r.fromJet && r.homingHit && playerTarget) {
+        // Steer rolled-hit jet RPG onto moving player vehicle so rolled hit chance stays accurate
+        const tx = playerTarget.x - r.x;
+        const ty = playerTarget.y + 0.7 - r.y;
+        const tz = playerTarget.z - r.z;
+        const len = Math.hypot(tx, ty, tz) || 1;
+        const speed = 72;
+        r.vx = THREE.MathUtils.damp(r.vx, (tx / len) * speed, 9, dt);
+        r.vy = THREE.MathUtils.damp(r.vy, (ty / len) * speed, 9, dt);
+        r.vz = THREE.MathUtils.damp(r.vz, (tz / len) * speed, 9, dt);
+      } else if (!r.fromJet) {
+        r.vy -= 1.4 * dt; // Slight gravity arc
+      }
+
       r.x += r.vx * dt;
       r.y += r.vy * dt;
       r.z += r.vz * dt;
@@ -412,12 +486,23 @@ export class WeaponSystem {
         onRocketTrail(r.x, r.y, r.z);
       }
 
-      let hit = r.age >= 2.8 || r.y <= groundHeightAt(r.x, r.z) + 0.25;
-      if (!hit) {
+      const maxLifetime = r.fromJet ? 4.2 : 2.8;
+      let hit = r.age >= maxLifetime || r.y <= groundHeightAt(r.x, r.z) + 0.25;
+
+      if (!hit && r.fromJet && r.homingHit && playerTarget) {
+        const pdx = playerTarget.x - r.x;
+        const pdy = playerTarget.y + 0.7 - r.y;
+        const pdz = playerTarget.z - r.z;
+        if (pdx * pdx + pdy * pdy + pdz * pdz <= 2.6 * 2.6) {
+          hit = true;
+        }
+      }
+
+      if (!hit && !r.fromJet) {
         const col = resolveCircleColliders(r.x, r.z, r.y, 0.35, colliders);
         if (col.hit) hit = true;
       }
-      if (!hit) {
+      if (!hit && !r.fromJet) {
         for (const t of dynamicTargets) {
           const dx = t.x - r.x;
           const dy = t.y + 0.9 - r.y;
@@ -431,9 +516,13 @@ export class WeaponSystem {
       }
 
       if (hit) {
+        const fromJet = r.fromJet;
+        const homingHit = r.homingHit;
         r.active = false;
+        r.fromJet = false;
+        r.homingHit = false;
         r.mesh.visible = false;
-        onRocketDetonate(r.x, Math.max(groundHeightAt(r.x, r.z), r.y), r.z);
+        onRocketDetonate(r.x, Math.max(groundHeightAt(r.x, r.z), r.y), r.z, fromJet, homingHit);
       }
     }
 

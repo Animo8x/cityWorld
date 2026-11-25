@@ -575,6 +575,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   }`}
                 />
               ))}
+              {hud.wantedStars >= 4 && (
+                <span title={hud.language === 'ar' ? 'طائرات حربية نشطة' : 'Military Fighter Jets Active'}>
+                  <Plane className="ml-1 w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-400 animate-pulse shrink-0" />
+                </span>
+              )}
               {hud.wantedStars > 0 && hud.isPoliceSearching && (
                 <span className="ml-1 text-[9px] md:text-[10px] font-bold uppercase text-sky-400 tabular-nums">
                   {formatCountdown(hud.wantedRemainingSec)}

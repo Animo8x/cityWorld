@@ -1942,7 +1942,14 @@ export class CityWorldEngine {
     };
   }
 
-  private handleExplosionAt(x: number, y: number, z: number, killedPlayer: boolean, scaleMult = 1): void {
+  private handleExplosionAt(
+    x: number,
+    y: number,
+    z: number,
+    killedPlayer: boolean,
+    scaleMult = 1,
+    skipWantedEscalation = false
+  ): void {
     this.explosions.triggerExplosion(x, y, z, scaleMult);
     this.sound.playExplosion();
     this.cameraCtrl.addShake(Math.min(1.3, 0.95 * scaleMult));
@@ -1950,7 +1957,9 @@ export class CityWorldEngine {
     this.multiplayer.notifyExplosion(x, y, z);
     if (killedPlayer) {
       this.player.health = 0;
-      this.wanted.setMinimumStars(3);
+      if (!skipWantedEscalation) {
+        this.wanted.setMinimumStars(3);
+      }
     }
   }
 
@@ -2005,14 +2014,31 @@ export class CityWorldEngine {
     }
   }
 
-  private handleRpgDetonation(rx: number, ry: number, rz: number): void {
-    this.handleExplosionAt(rx, ry, rz, false, 1.5);
+  private handleRpgDetonation(
+    rx: number,
+    ry: number,
+    rz: number,
+    fromJet = false,
+    jetHomingHit = false
+  ): void {
+    this.handleExplosionAt(rx, ry, rz, false, 1.5, fromJet);
     const blastRadiusSq = 8.0 * 8.0;
+
+    if (fromJet && jetHomingHit) {
+      if (this.activeVehicle && !this.activeVehicle.exploded) {
+        this.vehicleMgr.applyDamage(this.activeVehicle, 999, (veh) =>
+          this.handleVehicleDestroyed(veh, true)
+        );
+      } else {
+        this.handleExplosionAt(rx, ry, rz, true, 1.5, true);
+      }
+    }
 
     // 1-hit destroy any parked/other WorldVehicles in blast radius (shield active transformed Robot Mech from self-blast)
     for (const v of this.vehicleMgr.vehicles) {
       if (v.exploded) continue;
-      if (v === this.activeVehicle && isRobotCarClass(v.classId) && v.robotTransformed) continue;
+      if (fromJet && !jetHomingHit && v === this.activeVehicle) continue;
+      if (!fromJet && v === this.activeVehicle && isRobotCarClass(v.classId) && v.robotTransformed) continue;
       const dSq = (v.x - rx) ** 2 + (v.z - rz) ** 2;
       if (dSq <= blastRadiusSq) {
         this.vehicleMgr.applyDamage(v, 500, (veh) =>
@@ -2028,20 +2054,22 @@ export class CityWorldEngine {
       if (dSq <= blastRadiusSq) {
         this.traffic.applyDamage(a, 500, (ex, ey, ez) => {
           if (isBicycleClass(a.classId)) this.explosions.triggerDustBurst(ex, ey, ez);
-          else this.handleExplosionAt(ex, ey, ez, false, 1.15);
+          else this.handleExplosionAt(ex, ey, ez, false, 1.15, fromJet);
         });
       }
     }
 
     // 1-hit destroy police cruisers & officers in blast radius
-    for (const u of this.wanted.units) {
-      if (!u.active) continue;
-      if (!u.stolen && !u.exploded && (u.x - rx) ** 2 + (u.z - rz) ** 2 <= blastRadiusSq) {
-        this.wanted.applyCruiserDamage(u, 500, (ex, ey, ez) => this.handleExplosionAt(ex, ey, ez, false, 1.15));
-      }
-      if (u.officer.deployed && u.officer.hp > 0 && (u.officer.x - rx) ** 2 + (u.officer.z - rz) ** 2 <= blastRadiusSq) {
-        const res = this.wanted.damageTarget(u.officer.id, 500);
-        if (res.killedOfficer) this.money += 150;
+    if (!fromJet) {
+      for (const u of this.wanted.units) {
+        if (!u.active) continue;
+        if (!u.stolen && !u.exploded && (u.x - rx) ** 2 + (u.z - rz) ** 2 <= blastRadiusSq) {
+          this.wanted.applyCruiserDamage(u, 500, (ex, ey, ez) => this.handleExplosionAt(ex, ey, ez, false, 1.15));
+        }
+        if (u.officer.deployed && u.officer.hp > 0 && (u.officer.x - rx) ** 2 + (u.officer.z - rz) ** 2 <= blastRadiusSq) {
+          const res = this.wanted.damageTarget(u.officer.id, 500);
+          if (res.killedOfficer) this.money += 150;
+        }
       }
     }
 
@@ -2053,7 +2081,9 @@ export class CityWorldEngine {
       }
     }
 
-    this.wanted.setMinimumStars(3);
+    if (!fromJet) {
+      this.wanted.setMinimumStars(3);
+    }
   }
 
   private handlePunchAction(): void {
@@ -2808,7 +2838,9 @@ export class CityWorldEngine {
         this.world.colliders,
         rocketDynamicTargets,
         (x, y, z) => this.vehicleMgr.emitSmoke(x, y, z, false),
-        (rx, ry, rz) => this.handleRpgDetonation(rx, ry, rz)
+        (rx, ry, rz, fromJet, homingHit) =>
+          this.handleRpgDetonation(rx, ry, rz, Boolean(fromJet), Boolean(homingHit)),
+        { x: this.player.x, y: this.player.y, z: this.player.z }
       );
       this.explosions.update(dt);
 
@@ -3004,6 +3036,10 @@ export class CityWorldEngine {
               kind: 'success',
             };
             this.bannerTimer = 3.8;
+          },
+          (ox, oy, oz, isDirectHit, tx, ty, tz) => {
+            this.sound.playRpgLaunch();
+            this.weapons.launchJetRocket(ox, oy, oz, isDirectHit, tx, ty, tz);
           }
         );
       }
@@ -3222,6 +3258,9 @@ export class CityWorldEngine {
 
     this.wanted.units.forEach((u, idx) => {
       if (u.active) markers.push({ id: `cop_${idx}`, type: 'police', x: u.x, z: u.z });
+    });
+    this.wanted.jets.forEach((j, idx) => {
+      if (j.active) markers.push({ id: `jet_${idx}`, type: 'police', x: j.x, z: j.z });
     });
 
     INTERIOR_PORTALS.forEach((p) => {
