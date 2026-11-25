@@ -184,11 +184,16 @@ export class VehicleNetworkSystem {
         v.rig.propellerPivot.rotation.z += dt * (4 + Math.abs(speed) * 0.75);
       }
       if (v.rig.wingLeftPivot && v.rig.wingRightPivot) {
-        const wp = v.state.wingProgress;
-        v.rig.wingLeftPivot.visible = wp > 0.02;
-        v.rig.wingRightPivot.visible = wp > 0.02;
-        v.rig.wingLeftPivot.scale.set(wp, 1, 1);
-        v.rig.wingRightPivot.scale.set(wp, 1, 1);
+        const wp = THREE.MathUtils.clamp(v.state.wingProgress, 0, 1);
+        const foldAngle = 1.48 * (1 - wp);
+        v.rig.wingLeftPivot.visible = true;
+        v.rig.wingRightPivot.visible = true;
+        v.rig.wingLeftPivot.scale.set(1, 1, 1);
+        v.rig.wingRightPivot.scale.set(1, 1, 1);
+        v.rig.wingLeftPivot.rotation.y = foldAngle;
+        v.rig.wingLeftPivot.rotation.z = -wp * 0.07;
+        v.rig.wingRightPivot.rotation.y = -foldAngle;
+        v.rig.wingRightPivot.rotation.z = wp * 0.07;
       }
       if (v.rig.thrusterGlowMat) {
         v.rig.thrusterGlowMat.emissiveIntensity = v.state.wingsDeployed

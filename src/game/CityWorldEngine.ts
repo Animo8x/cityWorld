@@ -326,6 +326,7 @@ export class CityWorldEngine {
     canvas.addEventListener('touchcancel', this.handleTouchEnd);
     canvas.addEventListener('wheel', this.handleWheel, { passive: true });
     canvas.addEventListener('contextmenu', this.handleContextMenu);
+    canvas.addEventListener('webglcontextlost', this.handleWebGlContextLost);
     window.addEventListener('pagehide', this.handlePageExitSave);
     window.addEventListener('beforeunload', this.handlePageExitSave);
     document.addEventListener('visibilitychange', this.handleVisibilitySave);
@@ -350,6 +351,7 @@ export class CityWorldEngine {
     canvas.removeEventListener('touchcancel', this.handleTouchEnd);
     canvas.removeEventListener('wheel', this.handleWheel);
     canvas.removeEventListener('contextmenu', this.handleContextMenu);
+    canvas.removeEventListener('webglcontextlost', this.handleWebGlContextLost);
   }
 
   private handlePageExitSave = () => {
@@ -369,6 +371,10 @@ export class CityWorldEngine {
   };
 
   private handleContextMenu = (e: MouseEvent) => e.preventDefault();
+
+  private handleWebGlContextLost = (e: Event) => {
+    e.preventDefault();
+  };
 
   private handleResize = () => {
     const w = this.container.clientWidth || window.innerWidth;
@@ -1505,6 +1511,9 @@ export class CityWorldEngine {
         buy_car_hyper_viper: 'hyper_viper',
         buy_car_track_phantom: 'track_phantom',
         buy_car_nova_x: 'nova_x',
+        buy_car_voxel_jesko: 'voxel_jesko',
+        buy_car_voxel_bolide: 'voxel_bolide',
+        buy_car_voxel_revuelto: 'voxel_revuelto',
         buy_car_airplane: 'airplane',
         buy_car_gold_wing_coupe: 'gold_wing_coupe',
         buy_car_gold_wing_hyper: 'gold_wing_hyper',
@@ -3125,16 +3134,20 @@ export class CityWorldEngine {
   };
 
   private afterDraw(cb: () => void): void {
-    const gl = this.renderer.getContext() as WebGL2RenderingContext;
-    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-    gl.flush();
+    const gl = this.renderer.getContext() as Partial<WebGL2RenderingContext> | null;
+    if (!gl || typeof gl.fenceSync !== 'function' || typeof gl.getSyncParameter !== 'function') {
+      this.frameId = window.setTimeout(cb, 80);
+      return;
+    }
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE!, 0);
+    gl.flush?.();
     const poll = () => {
       if (this.disposed) return;
-      const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
+      const state = sync && gl.getSyncParameter!(sync, gl.SYNC_STATUS!);
       if (state === gl.UNSIGNALED) {
         this.frameId = window.setTimeout(poll, 5);
       } else {
-        if (sync) gl.deleteSync(sync);
+        if (sync && typeof gl.deleteSync === 'function') gl.deleteSync(sync);
         this.frameId = window.setTimeout(cb, 80);
       }
     };

@@ -97,6 +97,15 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           <p className="mt-3 text-xs md:text-base text-slate-200/90 max-w-md leading-relaxed">
             {t.titleDesc}
           </p>
+          <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded bg-slate-900/85 border border-cyan-400/40 text-[11px] font-bold text-cyan-300">
+            <span>v5.2</span>
+            <span className="text-slate-400">·</span>
+            <span>
+              {language === 'ar'
+                ? 'سيارات 412/416 + 5 روبوتات + أونلاين + حفظ التقدم'
+                : '412/416 Voxel Cars + 5 Robots + Online MP + Save'}
+            </span>
+          </div>
         </div>
 
         <button

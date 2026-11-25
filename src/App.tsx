@@ -40,6 +40,7 @@ export default function App() {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<CityWorldEngine | null>(null);
   const [hud, setHud] = useState<HudSnapshot | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
   // Auto-enable touch controls on phones/tablets, toggleable anytime in HUD
   const [touchEnabled, setTouchEnabled] = useState<boolean>(() => {
@@ -75,7 +76,7 @@ export default function App() {
     });
   };
 
-  const handleDownloadStandaloneHtml = () => {
+  const handleDownloadStandaloneHtml = async () => {
     if (typeof window === 'undefined') return;
     if (window.location.protocol === 'file:') {
       try {
@@ -85,7 +86,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld.html';
+        a.download = 'CityWorld-v5.2.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -95,9 +96,29 @@ export default function App() {
       }
       return;
     }
+
+    const downloadUrl = `/api/download-html?v=${Date.now()}`;
+    try {
+      const res = await fetch(downloadUrl, { cache: 'no-store' });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'CityWorld-v5.2.html';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        return;
+      }
+    } catch {
+      // Fallback to direct link download below
+    }
+
     const a = document.createElement('a');
-    a.href = `/api/download-html?v=${Date.now()}`;
-    a.download = 'CityWorld.html';
+    a.href = downloadUrl;
+    a.download = 'CityWorld-v5.2.html';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -107,13 +128,21 @@ export default function App() {
     const el = canvasMountRef.current;
     if (!el) return;
 
-    const engine = new CityWorldEngine(el, (snapshot) => {
-      setHud(snapshot);
-    });
-    engineRef.current = engine;
+    let engine: CityWorldEngine | null = null;
+    try {
+      engine = new CityWorldEngine(el, (snapshot) => {
+        setHud(snapshot);
+      });
+      engineRef.current = engine;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setInitError(msg || 'WebGL initialization failed');
+    }
 
     return () => {
-      engine.dispose();
+      if (engine) {
+        engine.dispose();
+      }
       engineRef.current = null;
     };
   }, []);
@@ -122,6 +151,20 @@ export default function App() {
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950">
       {/* Isolated WebGL canvas container — React HUD updates never tear down this node */}
       <div ref={canvasMountRef} className="w-full h-full" />
+
+      {initError && !hud && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 p-6 text-center" dir="rtl">
+          <div className="max-w-md rounded-2xl border border-rose-500/40 bg-slate-900 p-6 shadow-2xl">
+            <h2 className="text-lg font-black text-amber-400 mb-2">تعذّر تشغيل الرسوميات ثلاثية الأبعاد (WebGL)</h2>
+            <p className="text-xs text-slate-300 leading-relaxed mb-3">
+              يبدو أن هذا المتصفح أو العارض لا يدعم تسريع WebGL المطلوب للعبة. افتح اللعبة عبر متصفح Chrome أو Safari الحديث.
+            </p>
+            <div className="rounded-lg bg-slate-950/90 border border-slate-700 p-2 text-[11px] font-mono text-rose-300 text-left break-words" dir="ltr">
+              {initError}
+            </div>
+          </div>
+        </div>
+      )}
 
       {hud?.phase === 'title' && (
         <TitleScreen

@@ -40,6 +40,8 @@ const buildResult = esbuild.buildSync({
   loader: { '.css': 'empty' },
   define: {
     'process.env.NODE_ENV': '"production"',
+    'import.meta.env.DEV': 'false',
+    'import.meta.env.PROD': 'true',
   },
   write: false,
 });
@@ -113,12 +115,14 @@ const fallbackCss = `
   #cw-boot-detail{display:none;margin-top:12px;padding:10px;border-radius:8px;background:#450a0a;border:1px solid #ef4444;color:#fecaca;font-size:11px;font-family:monospace;word-break:break-word;text-align:left;direction:ltr}
 `;
 
+const buildStamp = new Date().toISOString();
 const html = `<!doctype html>
+<!-- CityWorld Standalone v5.2 | Built ${buildStamp} | Includes Voxel 412/416, 5 Mech Robots, Multiplayer P2P & WS, Singleplayer Save, HUD Scale -->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>CityWorld — 3D Open World Sandbox</title>
+    <title>CityWorld v5.2 — 3D Open World Sandbox</title>
     <meta name="description" content="Explore CityWorld, a 3D open-world city with 10 districts, driveable vehicles, live traffic, police chases, dynamic weather, day/night cycle, and missions." />
     <meta name="theme-color" content="#020617" />
     <meta name="mobile-web-app-capable" content="yes" />

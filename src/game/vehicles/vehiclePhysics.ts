@@ -640,6 +640,9 @@ export class VehicleManager {
       { classId: 'track_phantom', x: -195, z: -135, heading: 0 },
       { classId: 'nova_x', x: -18, z: -34, heading: Math.PI * 0.5 },
       { classId: 'nova_x', x: 300, z: -260, heading: -Math.PI * 0.5 },
+      { classId: 'voxel_revuelto', x: 16, z: -38, heading: -Math.PI * 0.5 },
+      { classId: 'voxel_bolide', x: -28, z: -34, heading: Math.PI * 0.5 },
+      { classId: 'voxel_jesko', x: 24, z: -26, heading: Math.PI * 0.5 },
       { classId: 'police', x: 52, z: -26, heading: Math.PI },
       // Golden Flying Cars Showcase + Flyable Airplanes
       { classId: 'gold_wing_coupe', x: 74, z: 108, heading: Math.PI },
@@ -652,6 +655,9 @@ export class VehicleManager {
       { classId: 'gold_wing_sovereign', x: 830, z: -140, heading: -Math.PI * 0.5 },
       { classId: 'gold_wing_hyper', x: 1015, z: -188, heading: Math.PI * 0.5 },
       { classId: 'gold_wing_coupe', x: 912, z: -15, heading: 0 },
+      { classId: 'voxel_revuelto', x: 840, z: -158, heading: -Math.PI * 0.5 },
+      { classId: 'voxel_bolide', x: 965, z: -145, heading: Math.PI },
+      { classId: 'voxel_jesko', x: 790, z: -102, heading: 0 },
       // 5 Transforming Robot Cars (Drive as Cars OR Transform into RPG Mechs!)
       { classId: 'mech_titan', x: -32, z: -18, heading: Math.PI * 0.5 },
       { classId: 'mech_viper', x: 64, z: 112, heading: Math.PI },
@@ -1004,14 +1010,29 @@ export class VehicleManager {
         }
 
         const radius = isPlane ? 2.1 : spec.width * 0.55;
-        const col = resolveCircleColliders(nextX, nextZ, v.y, radius, colliders);
+        const moveDist = Math.hypot(nextX - v.x, nextZ - v.z);
+        const subSteps = !canFlyMode && moveDist > 1.5 ? Math.min(6, Math.ceil(moveDist / 1.5)) : 1;
+        let curX = v.x;
+        let curZ = v.z;
+        let hitAny = false;
+        for (let s = 1; s <= subSteps; s++) {
+          const stepX = v.x + ((nextX - v.x) * s) / subSteps;
+          const stepZ = v.z + ((nextZ - v.z) * s) / subSteps;
+          const col = resolveCircleColliders(stepX, stepZ, v.y, radius, colliders);
+          curX = col.x;
+          curZ = col.z;
+          if (col.hit) {
+            hitAny = true;
+            break;
+          }
+        }
 
-        if (col.hit) {
+        if (hitAny) {
           const impactSpeed = Math.hypot(v.vx, v.vz);
           const minHit = isBike ? 1.8 : 2.8;
           if (impactSpeed > minHit) {
-            const hitDirX = col.x - nextX;
-            const hitDirZ = col.z - nextZ;
+            const hitDirX = curX - nextX;
+            const hitDirZ = curZ - nextZ;
             const contactX = v.x - hitDirX * 2;
             const contactZ = v.z - hitDirZ * 2;
             const sev = Math.min(0.85, (impactSpeed / 28) * (isBike ? 1.5 : canFlyMode ? 0.45 : 1.0));
@@ -1027,8 +1048,8 @@ export class VehicleManager {
           v.vx *= canFlyMode ? -0.35 : -0.25;
           v.vz *= canFlyMode ? -0.35 : -0.25;
         }
-        v.x = col.x;
-        v.z = col.z;
+        v.x = curX;
+        v.z = curZ;
 
         const terrainY = groundHeightAt(v.x, v.z);
         const bridgeY = getBridgeDeckHeight(v.x, v.z);
@@ -1086,8 +1107,13 @@ export class VehicleManager {
         }
       }
 
+      const isVoxelHyper =
+        v.classId === 'nova_x' ||
+        v.classId === 'voxel_revuelto' ||
+        v.classId === 'voxel_bolide' ||
+        v.classId === 'voxel_jesko';
       const lightsActive = !v.exploded && (v.occupiedByPlayer ? v.headlightsOn || isNight : isNight);
-      const targetHeadGlow = v.classId === 'nova_x' ? (lightsActive ? 2.6 : 1.75) : lightsActive ? 2.4 : 0.15;
+      const targetHeadGlow = isVoxelHyper ? (lightsActive ? 2.6 : 1.85) : lightsActive ? 2.4 : 0.15;
       const heads = v.rig.headlightMeshes;
       if (heads.length > 0 && (heads[0].material as THREE.MeshStandardMaterial).emissiveIntensity !== targetHeadGlow) {
         for (let idx = 0; idx < heads.length; idx++) {
@@ -1119,7 +1145,7 @@ export class VehicleManager {
         ? 0
         : v.braking
           ? 2.8
-          : v.classId === 'nova_x'
+          : isVoxelHyper
             ? 1.5
             : lightsActive
               ? 0.9

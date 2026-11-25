@@ -37,7 +37,11 @@ export class SoundEngine {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
 
-    this.ctx = new AudioCtx();
+    try {
+      this.ctx = new AudioCtx();
+    } catch {
+      return;
+    }
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = this._muted ? 0 : 0.65;
     this.masterGain.connect(this.ctx.destination);
@@ -164,8 +168,24 @@ export class SoundEngine {
       const isBicycle = params.vehicleClass === 'bicycle' || params.vehicleClass === 'speed_bicycle';
       if (params.inVehicle && !isBicycle) {
         let baseFreq = 52;
-        if (params.vehicleClass === 'supercar') baseFreq = 76;
-        else if (
+        if (
+          params.vehicleClass === 'voxel_revuelto' ||
+          params.vehicleClass === 'voxel_bolide' ||
+          params.vehicleClass === 'voxel_jesko' ||
+          params.vehicleClass === 'nova_x' ||
+          params.vehicleClass === 'gold_wing_sovereign' ||
+          params.vehicleClass === 'gold_wing_hyper'
+        ) {
+          baseFreq = 82;
+        } else if (
+          params.vehicleClass === 'supercar' ||
+          params.vehicleClass === 'hyper_viper' ||
+          params.vehicleClass === 'track_phantom' ||
+          params.vehicleClass === 'gold_wing_coupe' ||
+          params.vehicleClass === 'airplane'
+        ) {
+          baseFreq = 76;
+        } else if (
           params.vehicleClass === 'sports' ||
           params.vehicleClass === 'motorcycle' ||
           params.vehicleClass === 'coupe' ||
