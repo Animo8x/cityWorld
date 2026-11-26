@@ -86,7 +86,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v7.html';
+        a.download = 'CityWorld-v7.2.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -105,7 +105,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v7.html';
+        a.download = 'CityWorld-v7.2.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -118,7 +118,7 @@ export default function App() {
 
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = 'CityWorld-v7.html';
+    a.download = 'CityWorld-v7.2.html';
     document.body.appendChild(a);
     a.click();
     a.remove();

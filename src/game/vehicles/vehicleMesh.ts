@@ -908,9 +908,9 @@ export function buildVehicleMesh(
         addVoxel(rearGroup, 0.3, 0.24, 1.08, xOuter, groundClearance + 0.42, -l * 0.3, paintMat);
         addVoxel(rearGroup, 0.28, 0.14, 0.72, xOuter * 0.93, groundClearance + 0.55, -l * 0.28, paintMat);
 
-        // Sleek dark carbon mirrors on stalks
-        addVoxel(bodyGroup, 0.2, 0.06, 0.08, side * (w * 0.5), groundClearance + 0.62, 0.54, carbonDarkMat);
-        addVoxel(bodyGroup, 0.22, 0.12, 0.17, side * (w * 0.58), groundClearance + 0.67, 0.5, paintMat);
+        // Sleek dark carbon mirrors attached cleanly to door/fender shoulder
+        addVoxel(bodyGroup, 0.18, 0.06, 0.08, side * (w * 0.47), groundClearance + 0.5, 0.5, carbonDarkMat);
+        addVoxel(bodyGroup, 0.2, 0.11, 0.16, side * (w * 0.54), groundClearance + 0.54, 0.47, paintMat);
       });
 
       // Sharp swept white pixel LED front headlights
@@ -920,23 +920,15 @@ export function buildVehicleMesh(
         headlightMeshes.push(hl1, hl2);
       });
 
-      // Stepped dark smoked canopy + matte black center roof + bright YELLOW A-pillar & roof trim lines!
+      // Stepped dark smoked canopy + matte black center roof + flush stepped YELLOW A-pillar & roof border lines
       addVoxel(cabinGroup, w * 0.58, 0.14, 0.74, 0, groundClearance + 0.53, 0.44, glassMat);
       addVoxel(cabinGroup, w * 0.52, 0.13, 0.94, 0, groundClearance + 0.65, 0.12, glassMat);
       addVoxel(cabinGroup, w * 0.46, 0.08, 0.94, 0, groundClearance + 0.74, -0.05, carbonDarkMat);
       [-1, 1].forEach((side) => {
-        const pillarTrim = addVoxel(
-          cabinGroup,
-          0.055,
-          0.05,
-          0.74,
-          side * (w * 0.27),
-          groundClearance + 0.64,
-          0.34,
-          centYellowMat
-        );
-        pillarTrim.rotation.x = -0.34;
-        addVoxel(cabinGroup, 0.055, 0.045, 0.98, side * (w * 0.24), groundClearance + 0.76, -0.06, centYellowMat);
+        // Flush stepped yellow trim along lower windshield, upper A-pillar, and roof edge (zero upward sticking rods)
+        addVoxel(cabinGroup, 0.05, 0.05, 0.48, side * (w * 0.295), groundClearance + 0.555, 0.44, centYellowMat);
+        addVoxel(cabinGroup, 0.05, 0.05, 0.46, side * (w * 0.265), groundClearance + 0.675, 0.22, centYellowMat);
+        addVoxel(cabinGroup, 0.05, 0.045, 0.88, side * (w * 0.24), groundClearance + 0.755, -0.05, centYellowMat);
       });
 
       // Louvered matte black V12 engine deck + gunmetal buttresses + active rear aero deck lip
@@ -1196,16 +1188,17 @@ export function buildVehicleMesh(
     }
 
     // Signals
-    const leftSigGeo = new THREE.BoxGeometry(0.12, 0.08, 0.1);
-    const rightSigGeo = new THREE.BoxGeometry(0.12, 0.08, 0.1);
+    const isCentenario = classId === 'voxel_centenario';
+    const leftSigGeo = new THREE.BoxGeometry(isCentenario ? 0.08 : 0.12, isCentenario ? 0.05 : 0.08, 0.09);
+    const rightSigGeo = new THREE.BoxGeometry(isCentenario ? 0.08 : 0.12, isCentenario ? 0.05 : 0.08, 0.09);
     disposables.push(leftSigGeo, rightSigGeo);
     const leftSig = new THREE.Mesh(leftSigGeo, leftSigMat);
-    leftSig.position.set(-w * 0.46, groundClearance + 0.24, l * 0.46);
+    leftSig.position.set(-w * (isCentenario ? 0.44 : 0.46), groundClearance + (isCentenario ? 0.21 : 0.24), l * (isCentenario ? 0.44 : 0.46));
     const rightSig = new THREE.Mesh(rightSigGeo, rightSigMat);
-    rightSig.position.set(w * 0.46, groundClearance + 0.24, l * 0.46);
+    rightSig.position.set(w * (isCentenario ? 0.44 : 0.46), groundClearance + (isCentenario ? 0.21 : 0.24), l * (isCentenario ? 0.44 : 0.46));
     frontGroup.add(leftSig, rightSig);
 
-    // Chunky black voxel wheels (with crisp white hub pixel on Bolide)
+    // Chunky black voxel wheels (with crisp white hub pixel on Bolide & silver spokes + yellow rim ring on Centenario)
     const wheelX = w / 2 - 0.05;
     const frontZ = l * 0.31;
     const rearZ = -l * 0.31;
@@ -1230,14 +1223,17 @@ export function buildVehicleMesh(
         const lug = new THREE.Mesh(lugGeo, voxelSilverMat);
         spinGroup.add(lug);
       } else if (classId === 'voxel_centenario') {
-        const starGeo = new THREE.BoxGeometry(0.33, wr * 0.64, 0.08);
-        const rimRingGeo = new THREE.BoxGeometry(0.34, wr * 0.94, 0.12);
-        const rimRingCrossGeo = new THREE.BoxGeometry(0.34, 0.12, wr * 0.94);
-        disposables.push(starGeo, rimRingGeo, rimRingCrossGeo);
+        const spokeA = new THREE.BoxGeometry(0.33, wr * 0.68, 0.075);
+        const spokeB = new THREE.BoxGeometry(0.33, 0.075, wr * 0.68);
+        const outerRingGeo = new THREE.TorusGeometry(wr * 0.74, 0.024, 6, 18);
+        outerRingGeo.rotateY(Math.PI / 2);
+        disposables.push(spokeA, spokeB, outerRingGeo);
+        const outerRing = new THREE.Mesh(outerRingGeo, centYellowMat);
+        outerRing.position.x = wx < 0 ? -0.155 : 0.155;
         spinGroup.add(
-          new THREE.Mesh(starGeo, voxelSilverMat),
-          new THREE.Mesh(rimRingGeo, centYellowMat),
-          new THREE.Mesh(rimRingCrossGeo, centYellowMat)
+          new THREE.Mesh(spokeA, voxelSilverMat),
+          new THREE.Mesh(spokeB, voxelSilverMat),
+          outerRing
         );
       }
       pivot.add(spinGroup);
