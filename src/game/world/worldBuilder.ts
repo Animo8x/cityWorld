@@ -33,6 +33,7 @@ export interface WorldBuildResult {
   roadMaterials: THREE.MeshStandardMaterial[];
   updateStreaming: (playerX: number, playerZ: number, streamRadius?: number) => void;
   updateLightsAndWater: (time: number, isNight: boolean, isRaining: boolean, simTime: number) => void;
+  syncOwnedHouseSigns: (ownedHouses: Set<string>) => void;
   dispose: () => void;
 }
 
@@ -595,6 +596,8 @@ export function buildCityWorld(
   const doorWoodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.65 });
   disposables.push(houseSignMat, doorWoodMat);
 
+  const houseForSaleSigns = new Map<string, THREE.Group>();
+
   INTERIOR_PORTALS.filter((p) => p.kind === 'house').forEach((p) => {
     const tier = p.houseSizeTier ?? 1;
     const width = tier === 1 ? 11 : tier === 2 ? 15 : tier === 3 ? 20 : 24;
@@ -632,13 +635,16 @@ export function buildCityWorld(
     const porchStep = new THREE.Mesh(new THREE.BoxGeometry(width * 0.45, 0.26, 2.6), concreteMat);
     porchStep.position.set(hx, hy + 0.13, hz + depth / 2 + 1.3);
 
-    // For Sale / Residence Yard Sign next to doorway
+    // For Sale Yard Sign next to doorway (hidden automatically once player buys the house)
+    const signGroup = new THREE.Group();
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.4, 0.18), darkMetalMat);
     post.position.set(hx + width * 0.32, hy + 1.2, hz + depth / 2 + 1.6);
     const board = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.85, 0.16), houseSignMat);
     board.position.set(hx + width * 0.32, hy + 2.1, hz + depth / 2 + 1.6);
+    signGroup.add(post, board);
+    houseForSaleSigns.set(p.id, signGroup);
 
-    chunk.add(mainBody, winBand, door, porchStep, post, board);
+    chunk.add(mainBody, winBand, door, porchStep, signGroup);
 
     if (tier === 1) {
       // Pitched cozy cottage roof
@@ -1582,6 +1588,11 @@ export function buildCityWorld(
           b.ewRedMat.emissiveIntensity = !nsGo ? 0.1 : 2.4;
         }
       }
+    },
+    syncOwnedHouseSigns: (ownedHouses: Set<string>) => {
+      houseForSaleSigns.forEach((signGroup, houseId) => {
+        signGroup.visible = !ownedHouses.has(houseId);
+      });
     },
     dispose: () => {
       disposables.forEach((d) => d.dispose());

@@ -102,12 +102,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             {t.titleDesc}
           </p>
           <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded bg-slate-900/85 border border-cyan-400/40 text-[11px] font-bold text-cyan-300">
-            <span>v11</span>
+            <span>v11.5</span>
             <span className="text-slate-400">·</span>
             <span>
               {language === 'ar'
-                ? 'سكن الكريبر + بوغاتي 411 + سيستو 431 + طور القصة + أونلاين'
-                : 'Creeper Suit + Bugatti 411 + Sesto 431 + Story Mode + Online'}
+                ? '7 سيارات عادية + سكن الكريبر + بوغاتي 411 + طور القصة + أونلاين'
+                : '7 Street Cars + Creeper Suit + Bugatti 411 + Story Mode + Online'}
             </span>
           </div>
         </div>

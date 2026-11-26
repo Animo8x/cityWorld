@@ -314,6 +314,7 @@ export class CityWorldEngine {
     }
 
     this.loadSinglePlayerProgress();
+    this.world.syncOwnedHouseSigns(this.ownedHouses);
     this.applyQualitySettings();
     this.bindEvents();
     this.pushHud();
@@ -964,6 +965,7 @@ export class CityWorldEngine {
     this.ownedVehicles.clear();
     this.ownedSkins = new Set<PlayerSkinId>(['classic']);
     this.ownedHouses.clear();
+    this.world.syncOwnedHouseSigns(this.ownedHouses);
     this.missions.abortMission();
     this.missions.completedIds.clear();
     this.wanted.clearWanted();
@@ -1146,6 +1148,7 @@ export class CityWorldEngine {
       this.money += STORY_REWARD_AMOUNT;
     }
     this.storyRewardAwarded = false;
+    this.world.syncOwnedHouseSigns(this.ownedHouses);
 
     if (awardMoney) {
       this.saveSinglePlayerProgress(false);
@@ -1196,6 +1199,7 @@ export class CityWorldEngine {
     this.money = this.freeRoamBackup.money;
     this.ownedVehicles.clear();
     this.ownedHouses.clear();
+    this.world.syncOwnedHouseSigns(this.ownedHouses);
     this.missions.completedIds.clear();
     this.player.health = this.player.maxHealth;
     this.player.armor = 25;
@@ -1559,6 +1563,7 @@ export class CityWorldEngine {
 
     PLAYER_SKIN_LIST.forEach((s) => this.ownedSkins.add(s.id));
     INTERIOR_PORTALS.filter((p) => p.kind === 'house').forEach((p) => this.ownedHouses.add(p.id));
+    this.world.syncOwnedHouseSigns(this.ownedHouses);
     (Object.keys(VEHICLE_CATALOG) as VehicleClassId[]).forEach((v) => this.ownedVehicles.add(v));
 
     this.sound.playMissionCue('success');
@@ -1759,6 +1764,7 @@ export class CityWorldEngine {
     this.money -= action.cost;
     if (actionId === 'buy_house') {
       this.ownedHouses.add(this.activeInterior.id);
+      this.world.syncOwnedHouseSigns(this.ownedHouses);
     } else if (actionId === 'house_eat') {
       this.player.health = Math.min(this.player.maxHealth, this.player.health + 60);
       this.player.stamina = this.player.maxStamina;
@@ -1814,6 +1820,13 @@ export class CityWorldEngine {
         buy_car_compact: 'compact',
         buy_car_sedan: 'sedan',
         buy_car_suv: 'suv',
+        buy_car_city_kei: 'city_kei',
+        buy_car_classic_beetle: 'classic_beetle',
+        buy_car_estate_wagon: 'estate_wagon',
+        buy_car_family_minivan: 'family_minivan',
+        buy_car_offroad_jeep: 'offroad_jeep',
+        buy_car_executive_limo: 'executive_limo',
+        buy_car_utility_camper: 'utility_camper',
         buy_car_motorcycle: 'motorcycle',
         buy_car_muscle: 'muscle',
         buy_car_sports: 'sports',
@@ -2945,6 +2958,7 @@ export class CityWorldEngine {
           if (this.money >= hPrice) {
             this.money -= hPrice;
             this.ownedHouses.add(ctx.nearPortal.id);
+            this.world.syncOwnedHouseSigns(this.ownedHouses);
             this.sound.playMissionCue('step');
             this.missionBanner = {
               title: this.language === 'ar' ? `تم شراء ${hName}!` : `Purchased ${hName}!`,

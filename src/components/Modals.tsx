@@ -623,7 +623,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     onClick={onDownloadHtml}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/60 text-cyan-200 text-xs font-black cursor-pointer"
                   >
-                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v11)
+                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v11.5)
                   </button>
                   <p className="text-[11px] text-slate-400">{t.downloadHtmlHint}</p>
                 </div>
@@ -708,6 +708,10 @@ export const InteriorShopModal: React.FC<InteriorShopModalProps> = ({ hud, onAct
   const interior = hud.activeInterior;
   const t = getText(hud.language);
   const isRtl = hud.language === 'ar';
+  const isOwnedHouse = interior.kind === 'house' && hud.ownedHouses.includes(interior.id);
+  const visibleActions = isOwnedHouse
+    ? interior.shopActions.filter((act) => act.id !== 'buy_house')
+    : interior.shopActions;
 
   return (
     <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-slate-950/85 flex items-center justify-center p-4">
@@ -718,13 +722,19 @@ export const InteriorShopModal: React.FC<InteriorShopModalProps> = ({ hud, onAct
               {isRtl ? interior.nameAr : interior.name}
             </h2>
             <p className="text-xs text-slate-400">
-              {isRtl ? interior.subtitleAr : interior.subtitle}
+              {isOwnedHouse
+                ? isRtl
+                  ? 'منزل مملوك · تناول الطعام والنوم مجاناً في أي وقت'
+                  : 'Owned Home · Eat & Sleep Free Anytime'
+                : isRtl
+                  ? interior.subtitleAr
+                  : interior.subtitle}
             </p>
           </div>
           <div className="text-sm font-black text-emerald-400 tabular-nums">${hud.money.toLocaleString()}</div>
         </div>
         <div className="p-5 flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
-          {interior.shopActions.map((act) => {
+          {visibleActions.map((act) => {
             let statusBadge: string | null = null;
             let isEquipped = false;
             if (act.id.startsWith('buy_skin_')) {

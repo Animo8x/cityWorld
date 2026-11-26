@@ -2645,8 +2645,8 @@ export function buildVehicleMesh(
         ? h * 0.72
         : classId === 'truck'
           ? h * 0.42
-          : classId === 'van' || classId === 'ambulance'
-            ? h * 0.56
+          : classId === 'van' || classId === 'ambulance' || classId === 'family_minivan'
+            ? h * 0.54
             : isSporty
               ? h * 0.46
               : h * 0.44;
@@ -2659,7 +2659,10 @@ export function buildVehicleMesh(
     bodyGroup.add(lowerHull);
     disposables.push(lowerGeo);
 
-    const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.2, 0.22), darkTrimMat);
+    const frontBumper = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.04, 0.2, 0.22),
+      classId === 'classic_beetle' ? chromeMat : darkTrimMat
+    );
     frontBumper.position.set(0, groundClearance + 0.11, l / 2 + 0.02);
     const grille = new THREE.Mesh(new THREE.BoxGeometry(w * 0.54, 0.22, 0.06), chromeMat);
     grille.position.set(0, groundClearance + lowerHeight * 0.55, l / 2 + 0.02);
@@ -2675,15 +2678,29 @@ export function buildVehicleMesh(
       splitter.position.set(0, groundClearance + 0.03, l / 2 + 0.09);
       frontGroup.add(splitter);
     }
-    if (classId === 'pickup') {
-      const bullBar = new THREE.Mesh(new THREE.BoxGeometry(w * 0.72, 0.34, 0.12), chromeMat);
+    if (classId === 'pickup' || classId === 'offroad_jeep') {
+      const bullBar = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 0.72, 0.34, 0.12),
+        classId === 'offroad_jeep' ? darkTrimMat : chromeMat
+      );
       bullBar.position.set(0, groundClearance + 0.25, l / 2 + 0.12);
       frontGroup.add(bullBar);
     }
 
-    const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.2, 0.22), darkTrimMat);
+    const rearBumper = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.04, 0.2, 0.22),
+      classId === 'classic_beetle' ? chromeMat : darkTrimMat
+    );
     rearBumper.position.set(0, groundClearance + 0.11, -l / 2 - 0.02);
     rearGroup.add(rearBumper);
+
+    if (classId === 'executive_limo') {
+      const sideTrimL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, l * 0.78), chromeMat);
+      sideTrimL.position.set(-w / 2 - 0.01, groundClearance + lowerHeight * 0.52, 0);
+      const sideTrimR = sideTrimL.clone();
+      sideTrimR.position.x = w / 2 + 0.01;
+      bodyGroup.add(sideTrimL, sideTrimR);
+    }
 
     if (classId === 'police') {
       const doorWhiteMat = new THREE.MeshStandardMaterial({
@@ -2733,15 +2750,30 @@ export function buildVehicleMesh(
       roof.position.set(0, groundClearance + lowerHeight + h * 0.3, 0);
       roof.castShadow = true;
       cabinGroup.add(upperGlass, roof);
-    } else if (classId === 'pickup') {
+    } else if (classId === 'pickup' || classId === 'utility_camper') {
+      const isCrew = classId === 'utility_camper';
       const cabH = h - lowerHeight - groundClearance;
-      const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(w * 0.84, cabH, l * 0.34), glassMat);
-      cabGlass.position.set(0, groundClearance + lowerHeight + cabH / 2 - 0.02, l * 0.08);
-      const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w * 0.82, 0.1, l * 0.3), paintMat);
-      roofCap.position.set(0, groundClearance + lowerHeight + cabH - 0.02, l * 0.08);
-      const bedInner = new THREE.Mesh(new THREE.BoxGeometry(w * 0.84, 0.12, l * 0.38), darkTrimMat);
-      bedInner.position.set(0, groundClearance + lowerHeight - 0.04, -l * 0.29);
+      const cabLen = isCrew ? l * 0.46 : l * 0.34;
+      const cabZ = isCrew ? l * 0.06 : l * 0.08;
+      const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(w * 0.84, cabH, cabLen), glassMat);
+      cabGlass.position.set(0, groundClearance + lowerHeight + cabH / 2 - 0.02, cabZ);
+      const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w * 0.82, 0.1, cabLen * 0.9), paintMat);
+      roofCap.position.set(0, groundClearance + lowerHeight + cabH - 0.02, cabZ);
+      const bedInner = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 0.84, 0.12, isCrew ? l * 0.3 : l * 0.38),
+        darkTrimMat
+      );
+      bedInner.position.set(0, groundClearance + lowerHeight - 0.04, isCrew ? -l * 0.33 : -l * 0.29);
       cabinGroup.add(cabGlass, roofCap, bedInner);
+      if (isCrew) {
+        const rollTop = new THREE.Mesh(new THREE.BoxGeometry(w * 0.82, 0.09, 0.09), chromeMat);
+        rollTop.position.set(0, groundClearance + lowerHeight + cabH * 0.85, -l * 0.2);
+        const rollL = new THREE.Mesh(new THREE.BoxGeometry(0.08, cabH * 0.85, 0.08), chromeMat);
+        rollL.position.set(-w * 0.38, groundClearance + lowerHeight + cabH * 0.42, -l * 0.2);
+        const rollR = rollL.clone();
+        rollR.position.x = w * 0.38;
+        cabinGroup.add(rollTop, rollL, rollR);
+      }
     } else if (classId === 'convertible') {
       const cabH = h - lowerHeight - groundClearance;
       const windshield = new THREE.Mesh(new THREE.BoxGeometry(w * 0.84, cabH * 0.95, 0.14), glassMat);
@@ -2756,10 +2788,10 @@ export function buildVehicleMesh(
       cabinGroup.add(windshield, interior, rollL, rollR);
     } else {
       const cabinLen =
-        classId === 'van' || classId === 'ambulance'
-          ? l * 0.78
-          : classId === 'suv' || classId === 'hatchback'
-            ? l * 0.64
+        classId === 'van' || classId === 'ambulance' || classId === 'family_minivan'
+          ? l * 0.74
+          : classId === 'suv' || classId === 'hatchback' || classId === 'estate_wagon' || classId === 'city_kei' || classId === 'offroad_jeep'
+            ? l * 0.66
             : classId === 'supercar' ||
                 classId === 'hyper_viper' ||
                 classId === 'track_phantom'
@@ -2767,7 +2799,14 @@ export function buildVehicleMesh(
               : l * 0.52;
       const cabinH = h - lowerHeight - groundClearance;
       const cabinZ =
-        classId === 'van' || classId === 'ambulance' || classId === 'hatchback' ? -l * 0.08 : -l * 0.05;
+        classId === 'van' ||
+        classId === 'ambulance' ||
+        classId === 'hatchback' ||
+        classId === 'estate_wagon' ||
+        classId === 'family_minivan' ||
+        classId === 'offroad_jeep'
+          ? -l * 0.08
+          : -l * 0.04;
 
       const cabinGlass = new THREE.Mesh(new THREE.BoxGeometry(w * 0.84, cabinH, cabinLen), glassMat);
       cabinGlass.position.set(0, groundClearance + lowerHeight + cabinH / 2 - 0.02, cabinZ);
@@ -2777,6 +2816,31 @@ export function buildVehicleMesh(
       roofCap.position.set(0, groundClearance + lowerHeight + cabinH - 0.02, cabinZ);
       roofCap.castShadow = true;
       cabinGroup.add(cabinGlass, roofCap);
+
+      if (classId === 'classic_beetle') {
+        const crown = new THREE.Mesh(new THREE.BoxGeometry(w * 0.66, 0.14, cabinLen * 0.58), paintMat);
+        crown.position.set(0, groundClearance + lowerHeight + cabinH + 0.05, cabinZ);
+        cabinGroup.add(crown);
+      }
+
+      if (classId === 'estate_wagon' || classId === 'offroad_jeep') {
+        [-w * 0.32, w * 0.32].forEach((rx) => {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, cabinLen * 0.78), chromeMat);
+          rail.position.set(rx, groundClearance + lowerHeight + cabinH + 0.06, cabinZ);
+          cabinGroup.add(rail);
+        });
+      }
+
+      if (classId === 'offroad_jeep') {
+        const spareGeo = new THREE.CylinderGeometry(wr * 0.82, wr * 0.82, 0.24, 14);
+        spareGeo.rotateX(Math.PI / 2);
+        disposables.push(spareGeo);
+        const spareTire = new THREE.Mesh(spareGeo, tireMat);
+        spareTire.position.set(0, groundClearance + lowerHeight * 0.76, -l / 2 - 0.13);
+        const spareHub = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.26), chromeMat);
+        spareHub.position.copy(spareTire.position);
+        rearGroup.add(spareTire, spareHub);
+      }
 
       if (
         classId === 'sports' ||
