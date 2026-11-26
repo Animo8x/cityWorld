@@ -59,7 +59,7 @@ async function startServer(): Promise<void> {
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     if (asDownload) {
-      res.setHeader('Content-Disposition', 'attachment; filename="CityWorld-v8.html"');
+      res.setHeader('Content-Disposition', 'attachment; filename="CityWorld-v9.html"');
     }
     res.sendFile(filePath, { etag: false, lastModified: false });
   };

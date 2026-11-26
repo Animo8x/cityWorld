@@ -264,6 +264,7 @@ export function buildVehicleMesh(
   const isMech = classId.startsWith('mech_');
   const isVoxelHyper =
     classId === 'nova_x' ||
+    classId === 'voxel_sesto' ||
     classId === 'voxel_centenario' ||
     classId === 'voxel_revuelto' ||
     classId === 'voxel_bolide' ||
@@ -803,13 +804,14 @@ export function buildVehicleMesh(
       },
     };
   } else if (
+    classId === 'voxel_sesto' ||
     classId === 'voxel_centenario' ||
     classId === 'voxel_revuelto' ||
     classId === 'voxel_bolide' ||
     classId === 'voxel_jesko'
   ) {
     // -------------------------------------------------------------------------
-    // STEPPED VOXEL HYPERCARS (Centenario 419, Revuelto 416, Bolide 412, Jesko 412)
+    // STEPPED VOXEL HYPERCARS (Sesto 431, Centenario 419, Revuelto 416, Bolide 412, Jesko 412)
     // -------------------------------------------------------------------------
     const addVoxel = (
       parent: THREE.Object3D,
@@ -858,9 +860,131 @@ export function buildVehicleMesh(
       metalness: 0.34,
       roughness: 0.45,
     });
-    disposables.push(centYellowMat, carbonDarkMat);
+    const sestoRedMat = new THREE.MeshStandardMaterial({
+      color: 0xe11d48,
+      emissive: 0x7f1d1d,
+      emissiveIntensity: 0.16,
+      metalness: 0.25,
+      roughness: 0.32,
+    });
+    const sestoInnerMat = new THREE.MeshStandardMaterial({
+      color: 0x111318,
+      metalness: 0.38,
+      roughness: 0.5,
+    });
+    disposables.push(centYellowMat, carbonDarkMat, sestoRedMat, sestoInnerMat);
 
-    if (classId === 'voxel_centenario') {
+    if (classId === 'voxel_sesto') {
+      // === LAMBORGHINI SESTO ELEMENTO VOXEL (Matte Carbon-Gray + Signature Crimson Red, 431 km/h) ===
+      // Low matte carbon front chin splitter, aggressive triple intake mouth & side aero undertray
+      addVoxel(frontGroup, w * 0.98, 0.08, 0.58, 0, groundClearance + 0.05, l * 0.455, carbonDarkMat);
+      addVoxel(frontGroup, w * 0.86, 0.14, 0.28, 0, groundClearance + 0.15, l * 0.465, sestoInnerMat);
+      addVoxel(bodyGroup, w * 0.98, 0.08, l * 0.62, 0, groundClearance + 0.05, 0, carbonDarkMat);
+      // Center chin bridge & outer bumper aero fins
+      addVoxel(frontGroup, 0.24, 0.12, 0.18, 0, groundClearance + 0.14, l * 0.485, paintMat);
+      [-1, 1].forEach((side) => {
+        addVoxel(frontGroup, 0.16, 0.18, 0.28, side * (w * 0.43), groundClearance + 0.16, l * 0.43, paintMat);
+      });
+
+      // Stepped matte carbon wedge hood + small gold nose crest
+      addVoxel(frontGroup, w * 0.86, 0.16, 0.96, 0, groundClearance + 0.24, l * 0.31, paintMat);
+      addVoxel(frontGroup, w * 0.72, 0.13, 0.82, 0, groundClearance + 0.34, l * 0.21, paintMat);
+      addVoxel(frontGroup, w * 0.54, 0.08, 0.52, 0, groundClearance + 0.4, l * 0.13, paintMat);
+      addVoxel(frontGroup, 0.075, 0.045, 0.075, 0, groundClearance + 0.325, l * 0.468, centYellowMat);
+
+      // Signature Twin Crimson RED Trapezoid Hood Air Scoops in front of windshield!
+      [-1, 1].forEach((side) => {
+        addVoxel(frontGroup, 0.22, 0.065, 0.32, side * 0.34, groundClearance + 0.42, l * 0.17, sestoRedMat);
+        addVoxel(frontGroup, 0.15, 0.06, 0.22, side * 0.3, groundClearance + 0.425, l * 0.23, sestoRedMat);
+        addVoxel(frontGroup, 0.1, 0.04, 0.16, side * 0.33, groundClearance + 0.445, l * 0.16, sestoInnerMat);
+      });
+
+      // Vertical-angled sharp pixel LED headlights inside recessed dark housings
+      [-1, 1].forEach((side) => {
+        addVoxel(frontGroup, 0.22, 0.1, 0.28, side * (w * 0.34), groundClearance + 0.32, l * 0.38, sestoInnerMat);
+        const hl1 = addVoxel(frontGroup, 0.13, 0.075, 0.2, side * (w * 0.335), groundClearance + 0.34, l * 0.385, headMat);
+        const hl2 = addVoxel(frontGroup, 0.1, 0.065, 0.12, side * (w * 0.37), groundClearance + 0.37, l * 0.34, headMat);
+        headlightMeshes.push(hl1, hl2);
+      });
+
+      // Sculpted angular front fenders, wedge doors, deep side intakes, red rear shoulder accent, & rear haunches
+      [-1, 1].forEach((side) => {
+        const xOuter = side * (w * 0.435);
+        addVoxel(frontGroup, 0.28, 0.16, 0.94, xOuter, groundClearance + 0.34, l * 0.31, paintMat);
+        addVoxel(frontGroup, 0.24, 0.11, 0.58, xOuter * 0.94, groundClearance + 0.44, l * 0.28, paintMat);
+
+        // Door flank + matte carbon lower side skirt + deep angular side air intake
+        addVoxel(bodyGroup, 0.28, 0.27, 1.36, xOuter, groundClearance + 0.32, 0.02, paintMat);
+        addVoxel(bodyGroup, 0.12, 0.08, 1.56, side * (w * 0.48), groundClearance + 0.09, -0.02, carbonDarkMat);
+        addVoxel(bodyGroup, 0.14, 0.27, 0.62, side * (w * 0.435), groundClearance + 0.37, -0.34, sestoInnerMat);
+        addVoxel(bodyGroup, 0.07, 0.06, 0.42, side * (w * 0.465), groundClearance + 0.44, -0.26, paintMat);
+
+        // Rear muscular haunch + signature small red intake badge (matches rear 3/4 photo)
+        addVoxel(rearGroup, 0.3, 0.24, 1.06, xOuter, groundClearance + 0.42, -l * 0.3, paintMat);
+        addVoxel(rearGroup, 0.26, 0.14, 0.72, xOuter * 0.93, groundClearance + 0.54, -l * 0.28, paintMat);
+        addVoxel(rearGroup, 0.06, 0.055, 0.16, side * (w * 0.45), groundClearance + 0.56, -0.68, sestoRedMat);
+
+        // Sleek dark carbon mirrors
+        addVoxel(bodyGroup, 0.17, 0.055, 0.075, side * (w * 0.46), groundClearance + 0.5, 0.48, carbonDarkMat);
+        addVoxel(bodyGroup, 0.2, 0.105, 0.16, side * (w * 0.53), groundClearance + 0.535, 0.45, paintMat);
+      });
+
+      // Smoked glass canopy, red racing bucket seat headrests visible inside, & matte carbon roof
+      addVoxel(cabinGroup, w * 0.58, 0.14, 0.72, 0, groundClearance + 0.52, 0.44, glassMat);
+      addVoxel(cabinGroup, w * 0.52, 0.13, 0.92, 0, groundClearance + 0.64, 0.12, glassMat);
+      addVoxel(cabinGroup, w * 0.45, 0.075, 0.94, 0, groundClearance + 0.73, -0.06, carbonDarkMat);
+      [-0.24, 0.24].forEach((sx) => {
+        addVoxel(cabinGroup, 0.19, 0.22, 0.16, sx, groundClearance + 0.56, 0.05, sestoRedMat);
+      });
+
+      // Matte carbon rear engine cover with signature 2 forward red hex scoops + 10 (2x5) red-rimmed engine ports!
+      addVoxel(rearGroup, w * 0.52, 0.12, 1.24, 0, groundClearance + 0.59, -0.96, paintMat);
+      [-1, 1].forEach((side) => {
+        addVoxel(cabinGroup, 0.22, 0.15, 1.32, side * (w * 0.31), groundClearance + 0.6, -0.7, paintMat);
+        // 2 larger forward red-rimmed hexagonal engine vents
+        addVoxel(rearGroup, 0.18, 0.05, 0.18, side * 0.34, groundClearance + 0.66, -0.68, sestoRedMat);
+        addVoxel(rearGroup, 0.11, 0.055, 0.11, side * 0.34, groundClearance + 0.665, -0.68, sestoInnerMat);
+      });
+      // 10 (2 columns x 5 rows) signature red-rimmed hex engine ports down the spine
+      [-0.86, -1.04, -1.22, -1.4, -1.58].forEach((pz) => {
+        [-0.14, 0.14].forEach((px) => {
+          addVoxel(rearGroup, 0.11, 0.045, 0.11, px, groundClearance + 0.66, pz, sestoRedMat);
+          addVoxel(rearGroup, 0.065, 0.05, 0.065, px, groundClearance + 0.664, pz, sestoInnerMat);
+        });
+      });
+
+      // Signature Raised Carbon Rear Wing with twin pylons & endplates
+      [-0.44, 0.44].forEach((px) => {
+        addVoxel(rearGroup, 0.08, 0.22, 0.22, px, groundClearance + 0.69, -l * 0.42, carbonDarkMat);
+      });
+      addVoxel(rearGroup, w * 0.9, 0.06, 0.3, 0, groundClearance + 0.81, -l * 0.45, carbonDarkMat);
+      [-1, 1].forEach((side) => {
+        addVoxel(rearGroup, 0.055, 0.14, 0.34, side * (w * 0.45), groundClearance + 0.8, -l * 0.45, paintMat);
+      });
+
+      // Open dark carbon rear fascia, hex-cluster RED LED taillights, exposed RED gearbox & diffuser!
+      addVoxel(rearGroup, w * 0.88, 0.22, 0.34, 0, groundClearance + 0.42, -l * 0.43, sestoInnerMat);
+      addVoxel(rearGroup, w * 0.9, 0.06, 0.14, 0, groundClearance + 0.56, -l * 0.47, paintMat);
+      // Glowing red triple-hex rear taillight clusters + red center badge
+      [-1, 1].forEach((side) => {
+        const tl1 = addVoxel(rearGroup, 0.14, 0.08, 0.09, side * (w * 0.32), groundClearance + 0.49, -l * 0.485, tailMat);
+        const tl2 = addVoxel(rearGroup, 0.16, 0.08, 0.09, side * (w * 0.41), groundClearance + 0.5, -l * 0.475, tailMat);
+        taillightMeshes.push(tl1, tl2);
+      });
+      addVoxel(rearGroup, 0.2, 0.05, 0.07, 0, groundClearance + 0.48, -l * 0.485, sestoRedMat);
+
+      // Signature exposed RED rear gearbox/diff centerpiece + carbon X-struts + twin exhausts + diffuser
+      addVoxel(rearGroup, 0.32, 0.2, 0.2, 0, groundClearance + 0.19, -l * 0.475, sestoRedMat);
+      addVoxel(rearGroup, 0.18, 0.12, 0.16, 0, groundClearance + 0.24, -l * 0.495, sestoInnerMat);
+      addVoxel(rearGroup, 0.1, 0.18, 0.08, 0, groundClearance + 0.2, -l * 0.502, sestoRedMat);
+      [-0.3, 0.3].forEach((ex) => {
+        addVoxel(rearGroup, 0.1, 0.1, 0.14, ex, groundClearance + 0.27, -l * 0.49, voxelSilverMat);
+      });
+      addVoxel(rearGroup, w * 0.94, 0.14, 0.26, 0, groundClearance + 0.11, -l * 0.465, carbonDarkMat);
+      [-0.64, -0.4, 0.4, 0.64].forEach((fx) => {
+        addVoxel(rearGroup, 0.07, 0.22, 0.18, fx, groundClearance + 0.13, -l * 0.49, carbonDarkMat);
+      });
+    } else if (classId === 'voxel_centenario') {
       // === LAMBORGHINI CENTENARIO VOXEL (Carbon-Gray + Bright Yellow Aero Lines, 419 km/h) ===
       // Low matte carbon lower splitter + mouth + side undertray
       addVoxel(frontGroup, w * 1.0, 0.09, 0.64, 0, groundClearance + 0.05, l * 0.45, carbonDarkMat);
@@ -1188,7 +1312,7 @@ export function buildVehicleMesh(
     }
 
     // Signals
-    const isCentenario = classId === 'voxel_centenario';
+    const isCentenario = classId === 'voxel_centenario' || classId === 'voxel_sesto';
     const leftSigGeo = new THREE.BoxGeometry(isCentenario ? 0.08 : 0.12, isCentenario ? 0.05 : 0.08, 0.09);
     const rightSigGeo = new THREE.BoxGeometry(isCentenario ? 0.08 : 0.12, isCentenario ? 0.05 : 0.08, 0.09);
     disposables.push(leftSigGeo, rightSigGeo);
@@ -1198,7 +1322,7 @@ export function buildVehicleMesh(
     rightSig.position.set(w * (isCentenario ? 0.44 : 0.46), groundClearance + (isCentenario ? 0.21 : 0.24), l * (isCentenario ? 0.44 : 0.46));
     frontGroup.add(leftSig, rightSig);
 
-    // Chunky black voxel wheels (with crisp white hub pixel on Bolide & silver spokes + yellow rim ring on Centenario)
+    // Chunky black voxel wheels (with crisp white hub pixel on Bolide, yellow rim ring on Centenario, & red brake calipers on Sesto)
     const wheelX = w / 2 - 0.05;
     const frontZ = l * 0.31;
     const rearZ = -l * 0.31;
@@ -1234,6 +1358,21 @@ export function buildVehicleMesh(
           new THREE.Mesh(spokeA, voxelSilverMat),
           new THREE.Mesh(spokeB, voxelSilverMat),
           outerRing
+        );
+      } else if (classId === 'voxel_sesto') {
+        // Dark 5-spoke / cross voxel spokes + bright RED brake caliper behind wheel spokes
+        const spokeA = new THREE.BoxGeometry(0.33, wr * 0.72, 0.07);
+        const spokeB = new THREE.BoxGeometry(0.33, 0.07, wr * 0.72);
+        const hubGeo = new THREE.BoxGeometry(0.35, 0.1, 0.1);
+        const caliperGeo = new THREE.BoxGeometry(0.14, 0.16, 0.14);
+        disposables.push(spokeA, spokeB, hubGeo, caliperGeo);
+        const caliper = new THREE.Mesh(caliperGeo, sestoRedMat);
+        caliper.position.set(wx < 0 ? -0.06 : 0.06, 0.05, wz > 0 ? -0.11 : 0.11);
+        pivot.add(caliper);
+        spinGroup.add(
+          new THREE.Mesh(spokeA, carbonDarkMat),
+          new THREE.Mesh(spokeB, carbonDarkMat),
+          new THREE.Mesh(hubGeo, voxelSilverMat)
         );
       }
       pivot.add(spinGroup);

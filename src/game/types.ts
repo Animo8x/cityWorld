@@ -90,6 +90,7 @@ export type VehicleClassId =
   | 'voxel_bolide'
   | 'voxel_revuelto'
   | 'voxel_centenario'
+  | 'voxel_sesto'
   | 'muscle'
   | 'convertible'
   | 'coupe'

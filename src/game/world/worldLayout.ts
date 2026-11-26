@@ -708,6 +708,14 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
         descriptionAr: 'سيارة فوكسل كربون بخطوط صفراء خارقة بسرعة 419 كم/س ($8,989)!',
       },
       {
+        id: 'buy_car_voxel_sesto',
+        label: 'Tier 11F · Sesto Elemento Voxel 431 Carbon-Red (431 km/h)',
+        labelAr: 'فئة 11F · سيستو إليمينتو فوكسل كربون-أحمر (431 كم/س)',
+        cost: 9120,
+        description: '431 km/h matte carbon voxel hypercar with crimson red vents, rear wing & calipers!',
+        descriptionAr: 'أسرع سيارة فوكسل كربونية بلمسات حمراء خارقة بسرعة 431 كم/س ($9,120)!',
+      },
+      {
         id: 'buy_car_airplane',
         label: 'Tier 12 · SkyHopper Prop Plane (302 km/h)',
         labelAr: 'فئة 12 · طائرة سيتي وورلد للطيران والسفر (302 كم/س)',
