@@ -700,6 +700,14 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
         descriptionAr: 'أسرع سيارة فوكسل برتقالية بسرعة 416 كم/س ($8,450)!',
       },
       {
+        id: 'buy_car_voxel_centenario',
+        label: 'Tier 11E · Centenario Voxel 419 Carbon-Yellow (419 km/h)',
+        labelAr: 'فئة 11E · سينتيناريو فوكسل كربون بخطوط صفراء (419 كم/س)',
+        cost: 8989,
+        description: '419 km/h exposed carbon voxel hypercar with bright yellow aero lines!',
+        descriptionAr: 'سيارة فوكسل كربون بخطوط صفراء خارقة بسرعة 419 كم/س ($8,989)!',
+      },
+      {
         id: 'buy_car_airplane',
         label: 'Tier 12 · SkyHopper Prop Plane (302 km/h)',
         labelAr: 'فئة 12 · طائرة سيتي وورلد للطيران والسفر (302 كم/س)',

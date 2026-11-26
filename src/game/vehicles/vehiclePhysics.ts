@@ -641,6 +641,7 @@ export class VehicleManager {
       { classId: 'nova_x', x: -18, z: -34, heading: Math.PI * 0.5 },
       { classId: 'nova_x', x: 300, z: -260, heading: -Math.PI * 0.5 },
       { classId: 'voxel_revuelto', x: 16, z: -38, heading: -Math.PI * 0.5 },
+      { classId: 'voxel_centenario', x: 6, z: -48, heading: Math.PI * 0.5 },
       { classId: 'voxel_bolide', x: -28, z: -34, heading: Math.PI * 0.5 },
       { classId: 'voxel_jesko', x: 24, z: -26, heading: Math.PI * 0.5 },
       { classId: 'police', x: 52, z: -26, heading: Math.PI },
@@ -655,6 +656,7 @@ export class VehicleManager {
       { classId: 'gold_wing_sovereign', x: 830, z: -140, heading: -Math.PI * 0.5 },
       { classId: 'gold_wing_hyper', x: 1015, z: -188, heading: Math.PI * 0.5 },
       { classId: 'gold_wing_coupe', x: 912, z: -15, heading: 0 },
+      { classId: 'voxel_centenario', x: 882, z: -162, heading: Math.PI * 0.5 },
       { classId: 'voxel_revuelto', x: 840, z: -158, heading: -Math.PI * 0.5 },
       { classId: 'voxel_bolide', x: 965, z: -145, heading: Math.PI },
       { classId: 'voxel_jesko', x: 790, z: -102, heading: 0 },
@@ -1109,6 +1111,7 @@ export class VehicleManager {
 
       const isVoxelHyper =
         v.classId === 'nova_x' ||
+        v.classId === 'voxel_centenario' ||
         v.classId === 'voxel_revuelto' ||
         v.classId === 'voxel_bolide' ||
         v.classId === 'voxel_jesko';

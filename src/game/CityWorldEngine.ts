@@ -1514,6 +1514,7 @@ export class CityWorldEngine {
         buy_car_voxel_jesko: 'voxel_jesko',
         buy_car_voxel_bolide: 'voxel_bolide',
         buy_car_voxel_revuelto: 'voxel_revuelto',
+        buy_car_voxel_centenario: 'voxel_centenario',
         buy_car_airplane: 'airplane',
         buy_car_gold_wing_coupe: 'gold_wing_coupe',
         buy_car_gold_wing_hyper: 'gold_wing_hyper',

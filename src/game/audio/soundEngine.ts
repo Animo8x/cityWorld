@@ -169,6 +169,7 @@ export class SoundEngine {
       if (params.inVehicle && !isBicycle) {
         let baseFreq = 52;
         if (
+          params.vehicleClass === 'voxel_centenario' ||
           params.vehicleClass === 'voxel_revuelto' ||
           params.vehicleClass === 'voxel_bolide' ||
           params.vehicleClass === 'voxel_jesko' ||
