@@ -225,6 +225,22 @@ export const PLAYER_SKINS: Record<PlayerSkinId, PlayerSkinDef> = {
     swatchHex: '#84cc16',
     isMeme: true,
   },
+  meme_creeper_suit: {
+    id: 'meme_creeper_suit',
+    name: 'Minecraft Creeper Suit',
+    nameAr: 'بدلة وحش الكريبر (ماين كرافت)',
+    description: 'Iconic pixelated green Minecraft Creeper costume with blocky camo & classic pixel face!',
+    descriptionAr: 'بدلة وحش الكريبر من ماين كرافت بتصميم بيكسل أخضر مموه ووجه الكريبر الشهير ($3,000)!',
+    price: 3000,
+    jacketColor: 0x45b63b,
+    shirtColor: 0x2f8e27,
+    pantsColor: 0x3ba431,
+    shoeColor: 0x163813,
+    metalness: 0.04,
+    roughness: 0.85,
+    swatchHex: '#45b63b',
+    isMeme: true,
+  },
 };
 
 export const PLAYER_SKIN_LIST: PlayerSkinDef[] = Object.values(PLAYER_SKINS);

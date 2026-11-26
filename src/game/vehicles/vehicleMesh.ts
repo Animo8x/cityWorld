@@ -264,6 +264,7 @@ export function buildVehicleMesh(
   const isMech = classId.startsWith('mech_');
   const isVoxelHyper =
     classId === 'nova_x' ||
+    classId === 'voxel_bugatti_vgt' ||
     classId === 'voxel_sesto' ||
     classId === 'voxel_centenario' ||
     classId === 'voxel_revuelto' ||
@@ -804,6 +805,7 @@ export function buildVehicleMesh(
       },
     };
   } else if (
+    classId === 'voxel_bugatti_vgt' ||
     classId === 'voxel_sesto' ||
     classId === 'voxel_centenario' ||
     classId === 'voxel_revuelto' ||
@@ -811,7 +813,7 @@ export function buildVehicleMesh(
     classId === 'voxel_jesko'
   ) {
     // -------------------------------------------------------------------------
-    // STEPPED VOXEL HYPERCARS (Sesto 431, Centenario 419, Revuelto 416, Bolide 412, Jesko 412)
+    // STEPPED VOXEL HYPERCARS (Sesto 431, Centenario 419, Revuelto 416, Bolide 412, Jesko 412, Bugatti VGT 411)
     // -------------------------------------------------------------------------
     const addVoxel = (
       parent: THREE.Object3D,
@@ -872,9 +874,134 @@ export function buildVehicleMesh(
       metalness: 0.38,
       roughness: 0.5,
     });
-    disposables.push(centYellowMat, carbonDarkMat, sestoRedMat, sestoInnerMat);
+    const bugattiNavyMat = new THREE.MeshStandardMaterial({
+      color: 0x0c1b3a,
+      metalness: 0.45,
+      roughness: 0.34,
+    });
+    const bugattiRimBlueMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.2,
+      metalness: 0.35,
+      roughness: 0.28,
+    });
+    disposables.push(centYellowMat, carbonDarkMat, sestoRedMat, sestoInnerMat, bugattiNavyMat, bugattiRimBlueMat);
 
-    if (classId === 'voxel_sesto') {
+    if (classId === 'voxel_bugatti_vgt') {
+      // === BUGATTI VISION GRAN TURISMO VOXEL (French Sky Blue + Royal Navy Carbon, 411 km/h) ===
+      // Low deep-carbon front aero splitter + upturned corner dive-plane winglets + dark side undertray
+      addVoxel(frontGroup, w * 1.04, 0.08, 0.72, 0, groundClearance + 0.045, l * 0.46, carbonDarkMat);
+      addVoxel(bodyGroup, w * 1.0, 0.08, l * 0.64, 0, groundClearance + 0.05, 0, carbonDarkMat);
+      [-1, 1].forEach((side) => {
+        addVoxel(frontGroup, 0.14, 0.18, 0.32, side * (w * 0.49), groundClearance + 0.14, l * 0.43, bugattiNavyMat);
+        addVoxel(frontGroup, 0.28, 0.12, 0.26, side * (w * 0.36), groundClearance + 0.16, l * 0.45, sestoInnerMat);
+      });
+
+      // Signature Bugatti Center Horseshoe Grille + Red Oval Bugatti Badge!
+      addVoxel(frontGroup, 0.46, 0.34, 0.22, 0, groundClearance + 0.22, l * 0.465, bugattiNavyMat);
+      addVoxel(frontGroup, 0.36, 0.28, 0.24, 0, groundClearance + 0.21, l * 0.47, sestoInnerMat);
+      addVoxel(frontGroup, 0.12, 0.06, 0.06, 0, groundClearance + 0.33, l * 0.488, sestoRedMat);
+      [-1, 1].forEach((side) => {
+        addVoxel(frontGroup, 0.055, 0.28, 0.08, side * 0.21, groundClearance + 0.22, l * 0.48, voxelSilverMat);
+      });
+      addVoxel(frontGroup, 0.46, 0.055, 0.08, 0, groundClearance + 0.36, l * 0.48, voxelSilverMat);
+
+      // Two-Tone Front Hood: Sky Blue shoulders + Deep Royal Navy sunken hood trough & center spine
+      addVoxel(frontGroup, w * 0.9, 0.16, 0.98, 0, groundClearance + 0.26, l * 0.3, paintMat);
+      addVoxel(frontGroup, w * 0.76, 0.13, 0.84, 0, groundClearance + 0.36, l * 0.2, paintMat);
+      addVoxel(frontGroup, 0.56, 0.1, 0.82, 0, groundClearance + 0.4, l * 0.2, bugattiNavyMat);
+      addVoxel(frontGroup, 0.06, 0.06, 0.92, 0, groundClearance + 0.44, l * 0.24, paintMat);
+
+      // Sculpted Sky-Blue Front Fenders with 3 Voxel Louver Slits + Quad-Pixel LED Headlights
+      [-1, 1].forEach((side) => {
+        const xOuter = side * (w * 0.42);
+        addVoxel(frontGroup, 0.34, 0.17, 0.98, xOuter, groundClearance + 0.34, l * 0.3, paintMat);
+        addVoxel(frontGroup, 0.28, 0.13, 0.68, xOuter * 0.93, groundClearance + 0.46, l * 0.28, paintMat);
+        // 3 dark fender top louver gills
+        [l * 0.33, l * 0.26, l * 0.19].forEach((lz) => {
+          addVoxel(frontGroup, 0.18, 0.04, 0.045, side * (w * 0.37), groundClearance + 0.515, lz, bugattiNavyMat);
+        });
+        // Iconic 4-element horizontal quad-LED headlights on each side!
+        addVoxel(frontGroup, 0.42, 0.09, 0.14, side * (w * 0.32), groundClearance + 0.32, l * 0.435, sestoInnerMat);
+        [0.24, 0.3, 0.36, 0.42].forEach((hx) => {
+          const hl = addVoxel(frontGroup, 0.048, 0.055, 0.07, side * (w * hx), groundClearance + 0.33, l * 0.455, headMat);
+          headlightMeshes.push(hl);
+        });
+      });
+
+      // Signature Two-Tone Side Flanks: Sky-Blue Door + Deep Navy Bugatti C-Line & Muscular Navy Rear Haunches!
+      [-1, 1].forEach((side) => {
+        const xOuter = side * (w * 0.435);
+        // Sky-blue front door wedge
+        addVoxel(bodyGroup, 0.28, 0.28, 1.24, xOuter, groundClearance + 0.33, 0.1, paintMat);
+        // Tiny red square side accent (matches side & 3/4 view photo)
+        addVoxel(bodyGroup, 0.05, 0.06, 0.1, side * (w * 0.495), groundClearance + 0.44, -0.05, sestoRedMat);
+        // Deep-navy carbon side skirt + white/silver lower sponsor stripe
+        addVoxel(bodyGroup, 0.13, 0.1, 1.62, side * (w * 0.485), groundClearance + 0.09, -0.04, bugattiNavyMat);
+        addVoxel(bodyGroup, 0.04, 0.045, 0.48, side * (w * 0.505), groundClearance + 0.14, -0.45, voxelSilverMat);
+        // Iconic curved Bugatti C-Line framing side intake
+        addVoxel(bodyGroup, 0.12, 0.36, 0.16, side * (w * 0.465), groundClearance + 0.42, -0.42, bugattiNavyMat);
+        addVoxel(bodyGroup, 0.12, 0.1, 0.64, side * (w * 0.455), groundClearance + 0.57, -0.15, paintMat);
+        addVoxel(bodyGroup, 0.12, 0.26, 0.54, side * (w * 0.425), groundClearance + 0.37, -0.34, sestoInnerMat);
+
+        // Deep Royal Navy rear haunches + sky-blue top crest
+        addVoxel(rearGroup, 0.32, 0.26, 1.12, xOuter, groundClearance + 0.43, -l * 0.29, bugattiNavyMat);
+        addVoxel(rearGroup, 0.28, 0.14, 0.78, xOuter * 0.93, groundClearance + 0.56, -l * 0.27, bugattiNavyMat);
+        addVoxel(rearGroup, 0.12, 0.06, 0.62, side * (w * 0.38), groundClearance + 0.62, -l * 0.26, paintMat);
+
+        // Sleek sky-blue side mirrors on navy stems
+        addVoxel(bodyGroup, 0.16, 0.055, 0.075, side * (w * 0.46), groundClearance + 0.53, 0.48, bugattiNavyMat);
+        addVoxel(bodyGroup, 0.19, 0.1, 0.16, side * (w * 0.53), groundClearance + 0.56, 0.45, paintMat);
+      });
+
+      // Smoked glass canopy, visible sky-blue racing seats inside, navy roof + roof air scoop & dorsal fin!
+      addVoxel(cabinGroup, w * 0.58, 0.14, 0.74, 0, groundClearance + 0.54, 0.44, glassMat);
+      addVoxel(cabinGroup, w * 0.52, 0.13, 0.92, 0, groundClearance + 0.66, 0.12, glassMat);
+      addVoxel(cabinGroup, w * 0.46, 0.08, 0.96, 0, groundClearance + 0.75, -0.05, bugattiNavyMat);
+      addVoxel(cabinGroup, w * 0.38, 0.05, 0.3, 0, groundClearance + 0.74, 0.36, paintMat);
+      [-0.22, 0.22].forEach((sx) => {
+        addVoxel(cabinGroup, 0.18, 0.21, 0.16, sx, groundClearance + 0.57, 0.06, bugattiRimBlueMat);
+      });
+      // Center roof snorkel intake + iconic dorsal shark-fin running back to the rear wing!
+      addVoxel(cabinGroup, 0.24, 0.11, 0.38, 0, groundClearance + 0.81, -0.26, bugattiNavyMat);
+      addVoxel(cabinGroup, 0.07, 0.16, 1.24, 0, groundClearance + 0.75, -0.96, bugattiNavyMat);
+      addVoxel(cabinGroup, 0.08, 0.04, 1.18, 0, groundClearance + 0.83, -0.96, paintMat);
+
+      // Deep Royal Navy louvered rear engine deck with sky-blue trim flanks
+      addVoxel(rearGroup, w * 0.52, 0.12, 1.2, 0, groundClearance + 0.6, -0.96, bugattiNavyMat);
+      [-1, 1].forEach((side) => {
+        addVoxel(cabinGroup, 0.22, 0.15, 1.28, side * (w * 0.31), groundClearance + 0.61, -0.7, bugattiNavyMat);
+      });
+
+      // Massive Bugatti GT Rear Wing on Dual Pylons + Tall Deep-Navy Endplates with Sky-Blue Leading Edges!
+      [-0.46, 0.46].forEach((px) => {
+        addVoxel(rearGroup, 0.08, 0.26, 0.24, px, groundClearance + 0.72, -l * 0.41, bugattiNavyMat);
+      });
+      addVoxel(rearGroup, w * 0.98, 0.07, 0.34, 0, groundClearance + 0.87, -l * 0.44, bugattiNavyMat);
+      addVoxel(rearGroup, w * 0.94, 0.045, 0.1, 0, groundClearance + 0.9, -l * 0.41, paintMat);
+      [-1, 1].forEach((side) => {
+        addVoxel(rearGroup, 0.07, 0.34, 0.48, side * (w * 0.49), groundClearance + 0.76, -l * 0.42, bugattiNavyMat);
+        addVoxel(rearGroup, 0.05, 0.18, 0.16, side * (w * 0.5), groundClearance + 0.78, -l * 0.44, paintMat);
+      });
+
+      // Dark rear mesh fascia, Full-Width Glowing RED Horizontal Light Bar, White Bugatti Badge, 4 Exhausts & Diffuser!
+      addVoxel(rearGroup, w * 0.9, 0.24, 0.34, 0, groundClearance + 0.42, -l * 0.43, sestoInnerMat);
+      addVoxel(rearGroup, w * 0.92, 0.06, 0.14, 0, groundClearance + 0.56, -l * 0.47, bugattiNavyMat);
+      const tlCenter = addVoxel(rearGroup, w * 0.88, 0.065, 0.08, 0, groundClearance + 0.48, -l * 0.488, tailMat);
+      taillightMeshes.push(tlCenter);
+      // Tiny silver/white EB badge above taillight bar
+      addVoxel(rearGroup, 0.16, 0.055, 0.05, 0, groundClearance + 0.54, -l * 0.485, voxelSilverMat);
+      // Signature 4 center silver exhaust pipes
+      [-0.24, -0.08, 0.08, 0.24].forEach((ex) => {
+        addVoxel(rearGroup, 0.11, 0.11, 0.14, ex, groundClearance + 0.32, -l * 0.49, voxelSilverMat);
+      });
+      // Aggressive multi-fin carbon rear diffuser
+      addVoxel(rearGroup, w * 0.94, 0.16, 0.28, 0, groundClearance + 0.12, -l * 0.465, carbonDarkMat);
+      [-0.64, -0.32, 0, 0.32, 0.64].forEach((fx) => {
+        addVoxel(rearGroup, 0.075, 0.22, 0.18, fx, groundClearance + 0.13, -l * 0.495, carbonDarkMat);
+      });
+    } else if (classId === 'voxel_sesto') {
       // === LAMBORGHINI SESTO ELEMENTO VOXEL (Matte Carbon-Gray + Signature Crimson Red, 431 km/h) ===
       // Low matte carbon front chin splitter, aggressive triple intake mouth & side aero undertray
       addVoxel(frontGroup, w * 0.98, 0.08, 0.58, 0, groundClearance + 0.05, l * 0.455, carbonDarkMat);
@@ -1312,7 +1439,7 @@ export function buildVehicleMesh(
     }
 
     // Signals
-    const isCentenario = classId === 'voxel_centenario' || classId === 'voxel_sesto';
+    const isCentenario = classId === 'voxel_centenario' || classId === 'voxel_sesto' || classId === 'voxel_bugatti_vgt';
     const leftSigGeo = new THREE.BoxGeometry(isCentenario ? 0.08 : 0.12, isCentenario ? 0.05 : 0.08, 0.09);
     const rightSigGeo = new THREE.BoxGeometry(isCentenario ? 0.08 : 0.12, isCentenario ? 0.05 : 0.08, 0.09);
     disposables.push(leftSigGeo, rightSigGeo);
@@ -1322,7 +1449,7 @@ export function buildVehicleMesh(
     rightSig.position.set(w * (isCentenario ? 0.44 : 0.46), groundClearance + (isCentenario ? 0.21 : 0.24), l * (isCentenario ? 0.44 : 0.46));
     frontGroup.add(leftSig, rightSig);
 
-    // Chunky black voxel wheels (with crisp white hub pixel on Bolide, yellow rim ring on Centenario, & red brake calipers on Sesto)
+    // Chunky black voxel wheels (with crisp white hub pixel on Bolide, yellow rim ring on Centenario, red brake calipers on Sesto, & sky-blue Michelin rim ring on Bugatti VGT)
     const wheelX = w / 2 - 0.05;
     const frontZ = l * 0.31;
     const rearZ = -l * 0.31;
@@ -1358,6 +1485,22 @@ export function buildVehicleMesh(
           new THREE.Mesh(spokeA, voxelSilverMat),
           new THREE.Mesh(spokeB, voxelSilverMat),
           outerRing
+        );
+      } else if (classId === 'voxel_bugatti_vgt') {
+        // Silver multi-spoke star + red center lock nut + signature French sky-blue tire rim ring!
+        const spokeA = new THREE.BoxGeometry(0.33, wr * 0.72, 0.07);
+        const spokeB = new THREE.BoxGeometry(0.33, 0.07, wr * 0.72);
+        const hubGeo = new THREE.BoxGeometry(0.35, 0.1, 0.1);
+        const blueRingGeo = new THREE.TorusGeometry(wr * 0.75, 0.025, 6, 18);
+        blueRingGeo.rotateY(Math.PI / 2);
+        disposables.push(spokeA, spokeB, hubGeo, blueRingGeo);
+        const blueRing = new THREE.Mesh(blueRingGeo, bugattiRimBlueMat);
+        blueRing.position.x = wx < 0 ? -0.155 : 0.155;
+        spinGroup.add(
+          new THREE.Mesh(spokeA, voxelSilverMat),
+          new THREE.Mesh(spokeB, voxelSilverMat),
+          new THREE.Mesh(hubGeo, sestoRedMat),
+          blueRing
         );
       } else if (classId === 'voxel_sesto') {
         // Dark 5-spoke / cross voxel spokes + bright RED brake caliper behind wheel spokes

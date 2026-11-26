@@ -551,6 +551,14 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
         descriptionAr: 'زي دجاجة بيضاء بعرف أحمر كبير ومنقار برتقالي وأجنحة!',
       },
       {
+        id: 'buy_skin_meme_creeper_suit',
+        label: 'Minecraft · Creeper Monster Suit',
+        labelAr: 'ماين كرافت · بدلة وحش الكريبر',
+        cost: 3000,
+        description: 'Pixelated green Minecraft Creeper suit with iconic Creeper face!',
+        descriptionAr: 'بدلة وحش الكريبر من ماين كرافت بتصميم بيكسل أخضر ووجه الكريبر الشهير ($3,000)!',
+      },
+      {
         id: 'buy_skin_meme_shark_suit',
         label: 'Funny Meme · Street Shark Suit',
         labelAr: 'ميمز مضحك · بدلة سمكة القرش البري',
@@ -674,6 +682,14 @@ export const INTERIOR_PORTALS: InteriorPortalDef[] = [
         cost: 9500,
         description: 'Fastest 342 km/h supersonic hypercar in CityWorld!',
         descriptionAr: 'أقوى وأسرع سيارة في اللعبة بسرعة 342 كم/س!',
+      },
+      {
+        id: 'buy_car_voxel_bugatti_vgt',
+        label: 'Tier 11A · Bugatti Vision GT Voxel 411 (411 km/h)',
+        labelAr: 'فئة 11A · بوغاتي فيجن GT فوكسل الزرقاء (411 كم/س)',
+        cost: 7210,
+        description: '411 km/h two-tone blue Bugatti Vision GT voxel hypercar with GT wing & 4 exhausts!',
+        descriptionAr: 'بوغاتي فيجن GT فوكسل باللونين الأزرق الفاتح والكحلي بسرعة 411 كم/س ($7,210)!',
       },
       {
         id: 'buy_car_voxel_jesko',

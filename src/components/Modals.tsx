@@ -623,7 +623,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     onClick={onDownloadHtml}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/60 text-cyan-200 text-xs font-black cursor-pointer"
                   >
-                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v9)
+                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v11)
                   </button>
                   <p className="text-[11px] text-slate-400">{t.downloadHtmlHint}</p>
                 </div>

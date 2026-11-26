@@ -1822,6 +1822,7 @@ export class CityWorldEngine {
         buy_car_hyper_viper: 'hyper_viper',
         buy_car_track_phantom: 'track_phantom',
         buy_car_nova_x: 'nova_x',
+        buy_car_voxel_bugatti_vgt: 'voxel_bugatti_vgt',
         buy_car_voxel_jesko: 'voxel_jesko',
         buy_car_voxel_bolide: 'voxel_bolide',
         buy_car_voxel_revuelto: 'voxel_revuelto',

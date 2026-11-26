@@ -25,7 +25,8 @@ export type PlayerSkinId =
   | 'meme_chicken_suit'
   | 'meme_shark_suit'
   | 'meme_toast_suit'
-  | 'meme_alien_suit';
+  | 'meme_alien_suit'
+  | 'meme_creeper_suit';
 
 export interface PlayerSkinDef {
   id: PlayerSkinId;
@@ -91,6 +92,7 @@ export type VehicleClassId =
   | 'voxel_revuelto'
   | 'voxel_centenario'
   | 'voxel_sesto'
+  | 'voxel_bugatti_vgt'
   | 'muscle'
   | 'convertible'
   | 'coupe'

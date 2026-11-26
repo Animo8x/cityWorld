@@ -18,6 +18,10 @@ interface SharedMemeAssets {
     butter: THREE.MeshStandardMaterial;
     alienSkin: THREE.MeshStandardMaterial;
     alienGlow: THREE.MeshStandardMaterial;
+    creeperMain: THREE.MeshStandardMaterial;
+    creeperLight: THREE.MeshStandardMaterial;
+    creeperMid: THREE.MeshStandardMaterial;
+    creeperDark: THREE.MeshStandardMaterial;
     skin: THREE.MeshStandardMaterial;
   };
   geos: {
@@ -51,6 +55,10 @@ function getSharedAssets(): SharedMemeAssets {
         emissiveIntensity: 1.8,
         roughness: 0.2,
       }),
+      creeperMain: new THREE.MeshStandardMaterial({ color: 0x45b63b, roughness: 0.86 }),
+      creeperLight: new THREE.MeshStandardMaterial({ color: 0x76e865, roughness: 0.86 }),
+      creeperMid: new THREE.MeshStandardMaterial({ color: 0x319428, roughness: 0.88 }),
+      creeperDark: new THREE.MeshStandardMaterial({ color: 0x1c5c17, roughness: 0.9 }),
       skin: new THREE.MeshStandardMaterial({ color: 0xe2b18e, roughness: 0.65 }),
     },
     geos: {
@@ -202,6 +210,68 @@ export function buildMemeCostumeAttachables(skinId: PlayerSkinId): {
     addPart(headGroup, box, mats.black, -0.09, 0.04, 0.145, 0.1, 0.14, 0.03, 0, 0, 0.28);
     addPart(headGroup, box, mats.black, 0.09, 0.04, 0.145, 0.1, 0.14, 0.03, 0, 0, -0.28);
     addPart(headGroup, box, mats.black, 0, -0.07, 0.145, 0.1, 0.03, 0.02);
+  } else if (skinId === 'meme_creeper_suit') {
+    // Classic Minecraft Creeper monster suit: blocky torso + pixelated green camo tiles + iconic 8x8 pixel face cube!
+    addPart(torsoGroup, box, mats.creeperMain, 0, 0, 0, 0.5, 0.6, 0.3);
+    // Front & back Minecraft pixel camo pattern
+    const torsoFrontPixels: Array<[number, number, THREE.MeshStandardMaterial, number, number]> = [
+      [-0.14, 0.18, mats.creeperLight, 0.11, 0.11],
+      [0.08, 0.16, mats.creeperDark, 0.1, 0.12],
+      [-0.02, 0.05, mats.creeperMid, 0.12, 0.1],
+      [0.14, -0.04, mats.creeperLight, 0.1, 0.1],
+      [-0.15, -0.1, mats.creeperDark, 0.11, 0.12],
+      [0.02, -0.18, mats.creeperLight, 0.13, 0.09],
+      [-0.08, 0.0, mats.creeperLight, 0.08, 0.08],
+      [0.16, 0.08, mats.creeperMid, 0.09, 0.11],
+    ];
+    torsoFrontPixels.forEach(([px, py, mat, sx, sy]) => {
+      addPart(torsoGroup, box, mat, px, py, 0.152, sx, sy, 0.014);
+      addPart(torsoGroup, box, mat, -px, py, -0.152, sx, sy, 0.014);
+    });
+    // Side torso camo tiles
+    [-1, 1].forEach((side) => {
+      addPart(torsoGroup, box, mats.creeperLight, side * 0.252, 0.14, 0.04, 0.014, 0.1, 0.1);
+      addPart(torsoGroup, box, mats.creeperDark, side * 0.252, -0.06, -0.05, 0.014, 0.12, 0.1);
+      addPart(torsoGroup, box, mats.creeperMid, side * 0.252, 0.02, -0.06, 0.014, 0.09, 0.09);
+    });
+
+    // Oversized iconic Minecraft Creeper cube head (0.40 x 0.40 x 0.40, 1 pixel = 0.05)
+    addPart(headGroup, box, mats.creeperMain, 0, 0.04, 0, 0.4, 0.4, 0.4);
+
+    // Subtle green pixel camo tiles on head (forehead, top, sides, back)
+    const headCamo: Array<[number, number, number, THREE.MeshStandardMaterial, number, number, number]> = [
+      [-0.12, 0.19, 0.203, mats.creeperLight, 0.1, 0.08, 0.012],
+      [0.05, 0.2, 0.203, mats.creeperMid, 0.12, 0.07, 0.012],
+      [0.15, 0.16, 0.203, mats.creeperDark, 0.08, 0.09, 0.012],
+      [-0.15, -0.09, 0.203, mats.creeperLight, 0.08, 0.08, 0.012],
+      [0.15, -0.07, 0.203, mats.creeperMid, 0.08, 0.1, 0.012],
+      // Top of head
+      [-0.08, 0.243, 0.06, mats.creeperLight, 0.12, 0.012, 0.12],
+      [0.09, 0.243, -0.08, mats.creeperDark, 0.11, 0.012, 0.11],
+      [-0.1, 0.243, -0.1, mats.creeperMid, 0.1, 0.012, 0.1],
+      // Back of head
+      [0.08, 0.12, -0.203, mats.creeperLight, 0.12, 0.1, 0.012],
+      [-0.1, -0.02, -0.203, mats.creeperDark, 0.12, 0.12, 0.012],
+      [0.06, -0.1, -0.203, mats.creeperMid, 0.1, 0.09, 0.012],
+      // Left & right sides of head
+      [-0.203, 0.12, 0.06, mats.creeperLight, 0.012, 0.1, 0.1],
+      [-0.203, -0.04, -0.08, mats.creeperDark, 0.012, 0.12, 0.1],
+      [0.203, 0.1, -0.04, mats.creeperMid, 0.012, 0.1, 0.12],
+      [0.203, -0.06, 0.08, mats.creeperLight, 0.012, 0.1, 0.1],
+    ];
+    headCamo.forEach(([px, py, pz, mat, sx, sy, sz]) => {
+      addPart(headGroup, box, mat, px, py, pz, sx, sy, sz);
+    });
+
+    // Iconic 8x8 Minecraft Creeper face (+Z front face)
+    // Two square black eyes
+    addPart(headGroup, box, mats.black, -0.075, 0.09, 0.206, 0.1, 0.1, 0.024);
+    addPart(headGroup, box, mats.black, 0.075, 0.09, 0.206, 0.1, 0.1, 0.024);
+    // Center nose bridge + wide frown block + two hanging lower mouth fangs
+    addPart(headGroup, box, mats.black, 0, 0.015, 0.206, 0.1, 0.07, 0.024);
+    addPart(headGroup, box, mats.black, 0, -0.045, 0.206, 0.2, 0.085, 0.024);
+    addPart(headGroup, box, mats.black, -0.075, -0.11, 0.206, 0.05, 0.065, 0.024);
+    addPart(headGroup, box, mats.black, 0.075, -0.11, 0.206, 0.05, 0.065, 0.024);
   }
 
   return { torsoGroup, headGroup };
