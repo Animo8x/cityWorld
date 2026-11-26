@@ -147,30 +147,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     return (
     <div className="flex flex-col items-center gap-1 pointer-events-auto">
       <div className="flex flex-wrap items-center justify-center gap-1">
-        <button
-          onClick={onOpenPhone}
-          style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
-          className="flex items-center gap-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black shadow-lg border border-emerald-200 cursor-pointer"
-          title={`${t.phone} (P)`}
-        >
-          <Smartphone style={{ width: iconSz, height: iconSz }} />
-          <span>{t.phone}</span>
-          {hud.ownedVehicles.length > 0 && (
-            <span className="px-1 rounded bg-slate-950/20 text-[9px] font-black tabular-nums">
-              {hud.ownedVehicles.length}
-            </span>
-          )}
-        </button>
+        {!hud.story.active && (
+          <>
+            <button
+              onClick={onOpenPhone}
+              style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
+              className="flex items-center gap-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black shadow-lg border border-emerald-200 cursor-pointer"
+              title={`${t.phone} (P)`}
+            >
+              <Smartphone style={{ width: iconSz, height: iconSz }} />
+              <span>{t.phone}</span>
+              {hud.ownedVehicles.length > 0 && (
+                <span className="px-1 rounded bg-slate-950/20 text-[9px] font-black tabular-nums">
+                  {hud.ownedVehicles.length}
+                </span>
+              )}
+            </button>
 
-        <button
-          onClick={onOpenBackpack}
-          style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
-          className="flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black shadow-lg border border-amber-200 cursor-pointer"
-          title={`${t.backpack} (B)`}
-        >
-          <Backpack style={{ width: iconSz, height: iconSz }} />
-          <span>{t.backpack}</span>
-        </button>
+            <button
+              onClick={onOpenBackpack}
+              style={{ padding: `${padY}px ${padX}px`, fontSize: btnFont }}
+              className="flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black shadow-lg border border-amber-200 cursor-pointer"
+              title={`${t.backpack} (B)`}
+            >
+              <Backpack style={{ width: iconSz, height: iconSz }} />
+              <span>{t.backpack}</span>
+            </button>
+          </>
+        )}
 
         <button
           onClick={onToggleCamera}
@@ -525,6 +529,20 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </div>
             )}
 
+            {hud.story.active && hud.story.objectiveText && !hud.story.dialogue && (
+              <div
+                dir={hud.language === 'ar' ? 'rtl' : 'ltr'}
+                className="bg-slate-950/92 border border-cyan-400/70 px-3.5 py-1.5 rounded-lg shadow-lg"
+              >
+                <div className="text-[10px] md:text-xs font-black uppercase tracking-wider text-cyan-400">
+                  {t.storyHeaderTag}
+                </div>
+                <div className="text-[11px] md:text-sm font-bold text-white mt-0.5 line-clamp-2">
+                  {hud.story.objectiveText}
+                </div>
+              </div>
+            )}
+
             {hud.activeMission && (
               <div className="bg-slate-950/90 border border-sky-500/60 px-3 py-1.5 rounded-lg shadow-lg">
                 <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] md:text-xs font-bold uppercase tracking-wider text-sky-400">
@@ -686,6 +704,20 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div className="flex sm:hidden flex-col items-center gap-1 text-center">
           {touchEnabled && renderUtilityButtons(true)}
 
+          {hud.story.active && hud.story.objectiveText && !hud.story.dialogue && (
+            <div
+              dir={hud.language === 'ar' ? 'rtl' : 'ltr'}
+              className="bg-slate-950/92 border border-cyan-400/70 px-2.5 py-1 rounded-lg shadow-lg max-w-[92vw]"
+            >
+              <div className="text-[9px] font-black uppercase tracking-wider text-cyan-400">
+                {t.storyHeaderTag}
+              </div>
+              <div className="text-[10px] font-bold text-white mt-0.5 line-clamp-2">
+                {hud.story.objectiveText}
+              </div>
+            </div>
+          )}
+
           {hud.activeMission && (
             <div className="bg-slate-950/90 border border-sky-500/60 px-2.5 py-1 rounded-lg shadow-lg max-w-[92vw]">
               <div className="flex flex-wrap items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider text-sky-400">
@@ -724,8 +756,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       </div>
 
-      {/* BOTTOM PERIMETER ROW (Desktop / Non-Touch Only — zero bottom clutter on mobile touch screens!) */}
-      {!touchEnabled && (
+      {/* BOTTOM PERIMETER ROW (Desktop / Non-Touch Only — hidden while Story Dialogue/Victory is open!) */}
+      {!touchEnabled && !hud.story.dialogue && !hud.story.justFinishedModal && (
         <div className="flex items-end justify-between gap-2 md:gap-4">
           {/* Bottom-Left: Minimal Controls Reminder (desktop only) */}
           <div className="hidden lg:block text-[11px] font-medium text-slate-300 bg-slate-950/80 border border-slate-800 px-3 py-1.5 rounded-md">

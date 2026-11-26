@@ -13,6 +13,12 @@ import { PoliceUnit, WantedSystem } from './police/wantedSystem';
 import { MultiplayerManager } from './multiplayer/multiplayerManager';
 import type { NearbySharedVehicleCandidate } from './multiplayer/passengerSystem';
 import {
+  STORY_BANK_COLLIDER,
+  STORY_REWARD_AMOUNT,
+  StoryCallbacks,
+  StoryModeSystem,
+} from './story/storyMode';
+import {
   clearSinglePlayerSave,
   loadSinglePlayerSave,
   saveSinglePlayerGame,
@@ -92,6 +98,9 @@ export class CityWorldEngine {
   private gpsRenderer: GpsPathRenderer;
   public sound: SoundEngine;
   public multiplayer!: MultiplayerManager;
+  private story!: StoryModeSystem;
+  private freeRoamBackup: SinglePlayerSaveData | null = null;
+  private storyRewardAwarded = false;
 
   public phase: GamePhase = 'title';
   private activeVehicle: WorldVehicle | null = null;
@@ -110,6 +119,7 @@ export class CityWorldEngine {
   private gpsLastTargetKey = '';
   private missionBanner: HudSnapshot['missionBanner'] = null;
   private bannerTimer = 0;
+  private wastedFailedMissionName: string | null = null;
   private worldBorderNoticeTimer = 0;
   private devCodeActivated = false;
 
@@ -234,6 +244,7 @@ export class CityWorldEngine {
     this.weapons = new WeaponSystem(this.scene);
     this.missions = new MissionSystem(this.scene);
     this.gpsRenderer = new GpsPathRenderer(this.scene);
+    this.story = new StoryModeSystem(this.scene);
     this.multiplayer = new MultiplayerManager(this.scene, {
       getLanguage: () => this.language,
       getPlayerSkin: () => this.player.activeSkin,
@@ -355,7 +366,7 @@ export class CityWorldEngine {
   }
 
   private handlePageExitSave = () => {
-    if (!this.multiplayer.isActive() && (this.phase === 'playing' || this.hasSavedGame)) {
+    if (!this.multiplayer.isActive() && !this.story.active && (this.phase === 'playing' || this.hasSavedGame)) {
       this.saveSinglePlayerProgress(false);
     }
   };
@@ -364,6 +375,7 @@ export class CityWorldEngine {
     if (
       document.visibilityState === 'hidden' &&
       !this.multiplayer.isActive() &&
+      !this.story.active &&
       (this.phase === 'playing' || this.hasSavedGame)
     ) {
       this.saveSinglePlayerProgress(false);
@@ -446,7 +458,13 @@ export class CityWorldEngine {
           this.activeVehicle.robotTransformed &&
           !this.activeVehicle.exploded
       );
-      if (moved < 6 && !this.player.inInterior && (!this.activeVehicle || canRobotFire)) {
+      const allowInteriorFire = this.story.canShootInInterior();
+      if (
+        moved < 6 &&
+        !this.story.isDialogueOpen() &&
+        (!this.player.inInterior || allowInteriorFire) &&
+        (!this.activeVehicle || canRobotFire)
+      ) {
         this.justPressed.add('FireWeapon');
       }
     }
@@ -900,7 +918,7 @@ export class CityWorldEngine {
   }
 
   public saveSinglePlayerProgress(showBanner = true): boolean {
-    if (this.multiplayer.isActive()) {
+    if (this.multiplayer.isActive() || this.story.active) {
       return false;
     }
     const snapshot = this.buildSaveSnapshot();
@@ -995,14 +1013,303 @@ export class CityWorldEngine {
     this.pushHud();
   }
 
+  private getStoryCallbacks(): StoryCallbacks {
+    return {
+      playPhoneRing: () => this.sound.playPhoneRing(),
+      playCashPickup: () => this.sound.playCashPickup(),
+      playDoorLatch: () => this.sound.playDoorLatch(),
+      playCue: (kind) => this.sound.playMissionCue(kind),
+      spawnGetawayCar: (x, z, heading) =>
+        this.vehicleMgr.spawnVehicle('story_getaway', 'sports', x, z, heading, 0x991b1b, true),
+      removeGetawayCar: (veh) => {
+        if (this.activeVehicle === veh) {
+          this.activeVehicle.occupiedByPlayer = false;
+          this.activeVehicle = null;
+          this.player.setRidingPose('none', 0, 0);
+        }
+        const idx = this.vehicleMgr.vehicles.indexOf(veh);
+        if (idx >= 0) {
+          this.scene.remove(veh.rig.root);
+          veh.rig.dispose();
+          this.vehicleMgr.vehicles.splice(idx, 1);
+        }
+      },
+      teleportPlayer: (opts) => {
+        if (this.activeVehicle) {
+          this.activeVehicle.occupiedByPlayer = false;
+          this.activeVehicle.rig.cabinGroup.visible = true;
+          this.activeVehicle = null;
+        }
+        this.activeInterior = null;
+        this.interiors.setActiveInterior(null);
+        this.player.setRidingPose('none', 0, 0);
+        this.player.inInterior = opts.inInterior;
+        this.player.interiorFloorY = opts.interiorFloorY;
+        this.player.interiorHalfW = opts.halfW;
+        this.player.interiorHalfD = opts.halfD;
+        this.player.x = opts.x;
+        this.player.y = opts.y;
+        this.player.z = opts.z;
+        this.player.vx = 0;
+        this.player.vy = 0;
+        this.player.vz = 0;
+        this.player.heading = opts.heading;
+        this.player.root.position.set(opts.x, opts.y, opts.z);
+        this.player.root.rotation.y = opts.heading;
+        this.player.root.visible = !this.cameraCtrl.firstPerson;
+      },
+      equipStoryPistol: () => {
+        this.weapons.ownedWeapons.add('fists');
+        this.weapons.ownedWeapons.add('pistol');
+        this.weapons.ammoByWeapon.pistol = Math.max(this.weapons.ammoByWeapon.pistol, 90);
+        this.weapons.currentWeapon = 'pistol';
+      },
+      setNightTime: () => {
+        this.weatherTime.timeHours = 22.5;
+        this.weatherTime.weather = 'clear';
+      },
+      triggerWantedStars: (stars) => this.wanted.setMinimumStars(stars),
+      clearWanted: () => this.wanted.clearWanted(),
+      onGuardFireAtPlayer: (ox, oy, oz, dx, dy, dz, hit) => {
+        this.weapons.spawnTracer(ox, oy, oz, dx, dy, dz, true);
+        this.sound.playGunshot(false);
+        if (hit) {
+          this.player.applyDamage(5);
+          this.cameraCtrl.addShake(0.18);
+        }
+      },
+      awardStoryReward: (amount) => {
+        if (!this.storyRewardAwarded) {
+          this.storyRewardAwarded = true;
+          this.money += amount;
+          this.pushHud();
+        }
+      },
+      onShowBanner: (title, subtitle, kind) => {
+        this.missionBanner = { title, subtitle, kind };
+        this.bannerTimer = 4.2;
+      },
+      onHudChanged: () => this.pushHud(),
+    };
+  }
+
+  private restoreFromStoryMode(awardMoney: boolean): void {
+    const cb = this.getStoryCallbacks();
+    this.story.abortAndHide(cb);
+    const colIdx = this.world.colliders.indexOf(STORY_BANK_COLLIDER);
+    if (colIdx >= 0) {
+      this.world.colliders.splice(colIdx, 1);
+    }
+    if (this.activeVehicle) {
+      this.activeVehicle.occupiedByPlayer = false;
+      this.activeVehicle.rig.cabinGroup.visible = true;
+      this.activeVehicle = null;
+    }
+    this.activeInterior = null;
+    this.interiors.setActiveInterior(null);
+    this.wanted.clearWanted();
+    this.customWaypoint = null;
+
+    if (this.freeRoamBackup) {
+      const b = this.freeRoamBackup;
+      this.money = b.money + (awardMoney ? STORY_REWARD_AMOUNT : 0);
+      this.devCodeActivated = b.devCodeActivated;
+      this.ownedVehicles = new Set<VehicleClassId>(b.ownedVehicles);
+      this.ownedSkins = new Set<PlayerSkinId>(b.ownedSkins);
+      this.ownedHouses = new Set<string>(b.ownedHouses);
+      this.missions.completedIds = new Set<string>(b.completedMissionIds);
+      this.player.inInterior = false;
+      this.player.interiorFloorY = 0;
+      this.player.interiorHalfW = 11;
+      this.player.interiorHalfD = 11;
+      this.player.x = b.player.x;
+      this.player.y = b.player.y;
+      this.player.z = b.player.z;
+      this.player.vx = 0;
+      this.player.vy = 0;
+      this.player.vz = 0;
+      this.player.heading = b.player.heading;
+      this.player.health = this.player.maxHealth;
+      this.player.armor = b.player.armor;
+      this.player.stamina = this.player.maxStamina;
+      this.player.root.position.set(this.player.x, this.player.y, this.player.z);
+      this.player.root.rotation.y = this.player.heading;
+      this.player.applySkin(b.player.activeSkin);
+      this.fpRig.syncSkin(b.player.activeSkin);
+      this.weapons.ownedWeapons = new Set<WeaponId>(b.weapons.ownedWeapons);
+      this.weapons.ammoByWeapon = { ...b.weapons.ammoByWeapon };
+      this.weapons.currentWeapon = b.weapons.currentWeapon;
+      this.weatherTime.timeHours = b.environment.timeHours;
+      this.weatherTime.weather = b.environment.weather;
+      this.freeRoamBackup = null;
+    } else if (awardMoney && !this.storyRewardAwarded) {
+      this.money += STORY_REWARD_AMOUNT;
+    }
+    this.storyRewardAwarded = false;
+
+    if (awardMoney) {
+      this.saveSinglePlayerProgress(false);
+    }
+  }
+
+  public startStoryMode(): boolean {
+    this.sound.init();
+    if (this.story.completed) {
+      this.missionBanner = {
+        title: this.language === 'ar' ? 'القصة مكتملة بالفعل' : 'Story Already Completed',
+        subtitle:
+          this.language === 'ar'
+            ? 'لقد أنهيت طور القصة مسبقاً ولا يمكن إعادته.'
+            : 'Story Mode can only be completed once.',
+        kind: 'info',
+      };
+      this.bannerTimer = 3.5;
+      this.pushHud();
+      return false;
+    }
+
+    if (this.multiplayer.isActive()) {
+      this.multiplayer.leaveSession();
+    }
+    this.freeRoamBackup = this.buildSaveSnapshot();
+    this.storyRewardAwarded = false;
+    this.wastedFailedMissionName = null;
+
+    if (this.player.inInterior && this.activeInterior) {
+      this.exitInterior();
+    }
+    if (this.activeVehicle) {
+      this.activeVehicle.occupiedByPlayer = false;
+      this.activeVehicle.rig.cabinGroup.visible = true;
+      this.activeVehicle = null;
+      this.clearAutoFlightWaypoint();
+    }
+    this.missions.abortMission();
+    this.wanted.clearWanted();
+    this.customWaypoint = null;
+
+    if (!this.world.colliders.includes(STORY_BANK_COLLIDER)) {
+      this.world.colliders.push(STORY_BANK_COLLIDER);
+    }
+
+    // Keep player's existing money balance visible throughout Story Mode
+    this.money = this.freeRoamBackup.money;
+    this.ownedVehicles.clear();
+    this.ownedHouses.clear();
+    this.missions.completedIds.clear();
+    this.player.health = this.player.maxHealth;
+    this.player.armor = 25;
+    this.player.stamina = this.player.maxStamina;
+    this.player.isSwimming = false;
+    this.weapons.ownedWeapons = new Set<WeaponId>(['fists', 'pistol']);
+    this.weapons.ammoByWeapon = {
+      fists: 999,
+      pistol: 90,
+      smg: 0,
+      shotgun: 0,
+      rifle: 0,
+      rpg: 0,
+    };
+    this.weapons.currentWeapon = 'pistol';
+
+    this.held.clear();
+    this.firingActive = false;
+    this.phase = 'playing';
+
+    return this.story.startStory(this.getStoryCallbacks(), this.language);
+  }
+
+  private restartStoryFromBeginning(): void {
+    // Keep freeRoamBackup intact so player's Free Roam balance/assets remain safe
+    this.storyRewardAwarded = false;
+    this.wastedFailedMissionName = null;
+    if (this.freeRoamBackup) {
+      this.money = this.freeRoamBackup.money;
+    }
+    if (this.activeVehicle) {
+      this.activeVehicle.occupiedByPlayer = false;
+      this.activeVehicle.rig.cabinGroup.visible = true;
+      this.activeVehicle = null;
+      this.clearAutoFlightWaypoint();
+    }
+    this.activeInterior = null;
+    this.interiors.setActiveInterior(null);
+    this.missions.abortMission();
+    this.wanted.clearWanted();
+    this.customWaypoint = null;
+
+    if (!this.world.colliders.includes(STORY_BANK_COLLIDER)) {
+      this.world.colliders.push(STORY_BANK_COLLIDER);
+    }
+
+    this.player.health = this.player.maxHealth;
+    this.player.armor = 25;
+    this.player.stamina = this.player.maxStamina;
+    this.player.isSwimming = false;
+    this.player.setRidingPose('none', 0, 0);
+    this.weapons.ownedWeapons = new Set<WeaponId>(['fists', 'pistol']);
+    this.weapons.ammoByWeapon = {
+      fists: 999,
+      pistol: 90,
+      smg: 0,
+      shotgun: 0,
+      rifle: 0,
+      rpg: 0,
+    };
+    this.weapons.currentWeapon = 'pistol';
+
+    this.held.clear();
+    this.firingActive = false;
+    this.phase = 'playing';
+    this.story.handlePlayerWastedInStory(this.getStoryCallbacks(), this.language);
+    this.pushHud();
+  }
+
+  public advanceStoryDialogue(): void {
+    this.sound.init();
+    this.story.advanceDialogue(this.getStoryCallbacks());
+  }
+
+  public finishStoryToMenu(): void {
+    this.restoreFromStoryMode(true);
+    this.phase = 'title';
+    this.pushHud();
+  }
+
+  public finishStoryToFreeRoam(): void {
+    this.restoreFromStoryMode(true);
+    this.phase = 'playing';
+    this.missionBanner = {
+      title: this.language === 'ar' ? '+$10,000 مكافأة القصة!' : '+$10,000 Story Reward!',
+      subtitle:
+        this.language === 'ar'
+          ? 'تم إضافة 10,000 دولار إلى رصيدك في اللعب الحر بنجاح.'
+          : '$10,000 has been added to your Free Roam balance!',
+      kind: 'success',
+    };
+    this.bannerTimer = 4.5;
+    this.pushHud();
+  }
+
+  public exitStoryToMenu(): void {
+    this.wastedFailedMissionName = null;
+    this.restoreFromStoryMode(false);
+    this.phase = 'title';
+    this.pushHud();
+  }
+
   public startNewSinglePlayerGame(): void {
     this.sound.init();
+    this.wastedFailedMissionName = null;
+    if (this.story.active) this.restoreFromStoryMode(false);
     this.resetSinglePlayerProgress();
     this.startGame();
   }
 
   public startGame(): void {
     this.sound.init();
+    this.wastedFailedMissionName = null;
+    if (this.story.active) this.restoreFromStoryMode(false);
     const resumed = this.hasSavedGame;
     this.phase = 'playing';
     this.missionBanner = {
@@ -1032,6 +1339,7 @@ export class CityWorldEngine {
 
   public openMultiplayerLobby(): void {
     this.sound.init();
+    if (this.story.active) this.restoreFromStoryMode(false);
     this.phase = 'multiplayer_lobby';
     this.held.clear();
     this.firingActive = false;
@@ -1139,11 +1447,13 @@ export class CityWorldEngine {
   }
 
   public togglePhone(): void {
+    if (this.story.active) return;
     if (this.phase === 'playing') this.setPhase('phone');
     else if (this.phase === 'phone') this.setPhase('playing');
   }
 
   public toggleBackpack(): void {
+    if (this.story.active) return;
     if (this.phase === 'playing') this.setPhase('backpack');
     else if (this.phase === 'backpack') this.setPhase('playing');
   }
@@ -1358,6 +1668,7 @@ export class CityWorldEngine {
 
   public startMissionById(id: string): void {
     this.sound.init();
+    this.wastedFailedMissionName = null;
     if (this.missions.activeMission) {
       this.missions.abortMission();
     }
@@ -1596,8 +1907,59 @@ export class CityWorldEngine {
     this.pushHud();
   }
 
+  private handlePlayerDeath(): void {
+    this.held.clear();
+    this.firingActive = false;
+    if (this.activeVehicle) {
+      const exitedVehId = this.activeVehicle.id;
+      this.activeVehicle.occupiedByPlayer = false;
+      this.activeVehicle.rig.cabinGroup.visible = true;
+      this.multiplayer.notifyVehicleExited(exitedVehId, this.player.x, this.player.y, this.player.z);
+      this.activeVehicle = null;
+      this.clearAutoFlightWaypoint();
+      this.player.setRidingPose('none', 0, 0);
+    }
+
+    if (this.story.active) {
+      this.wastedFailedMissionName = null;
+      this.story.onPlayerWasted(this.getStoryCallbacks(), this.language);
+    } else if (this.missions.activeMission) {
+      const failed = this.missions.activeMission;
+      const failedTitle = this.language === 'ar' ? failed.titleAr : failed.title;
+      this.missions.abortMission();
+      this.wastedFailedMissionName = failedTitle;
+      this.sound.playMissionCue('fail');
+      this.missionBanner = {
+        title: this.language === 'ar' ? 'فشلت المهمة' : 'Mission Failed',
+        subtitle:
+          this.language === 'ar'
+            ? `${failedTitle} — لقد متّ أثناء المهمة`
+            : `${failedTitle} — You died during the mission`,
+        kind: 'fail',
+      };
+      this.bannerTimer = 5.0;
+    } else {
+      this.wastedFailedMissionName = null;
+    }
+
+    this.phase = 'wasted';
+    this.pushHud();
+  }
+
   public respawnAfterWasted(): void {
+    if (this.story.active) {
+      this.restartStoryFromBeginning();
+      return;
+    }
+    if (this.missions.activeMission) {
+      this.missions.abortMission();
+    }
+    this.wastedFailedMissionName = null;
     this.player.respawnAtHospital();
+    this.player.isSwimming = false;
+    this.player.interiorFloorY = 0;
+    this.player.interiorHalfW = 11;
+    this.player.interiorHalfD = 11;
     this.weapons.refillAmmo();
     this.wanted.clearWanted();
     if (this.multiplayer.passenger.role === 'passenger') {
@@ -1613,6 +1975,7 @@ export class CityWorldEngine {
     this.clearAutoFlightWaypoint();
     this.activeInterior = null;
     this.interiors.setActiveInterior(null);
+    this.held.clear();
     this.firingActive = false;
     this.phase = 'playing';
     this.missionBanner = {
@@ -1653,6 +2016,44 @@ export class CityWorldEngine {
         nearHouseFood: false,
         nearHouseBed: false,
       };
+    }
+
+    if (this.story.active) {
+      const sCtx = this.story.getInteractionContext(
+        this.player.x,
+        this.player.z,
+        this.player.inInterior,
+        Boolean(this.activeVehicle),
+        this.language
+      );
+      if (sCtx.prompt) {
+        return {
+          prompt: sCtx.prompt,
+          nearVehicle: sCtx.nearGetawayCar,
+          nearRemoteVehicle: null,
+          nearTrafficAgent: null,
+          nearPoliceUnit: null,
+          nearMissionId: null,
+          nearPortal: null,
+          nearInteriorExit: false,
+          nearHouseFood: false,
+          nearHouseBed: false,
+        };
+      }
+      if (this.player.inInterior) {
+        return {
+          prompt: null,
+          nearVehicle: null,
+          nearRemoteVehicle: null,
+          nearTrafficAgent: null,
+          nearPoliceUnit: null,
+          nearMissionId: null,
+          nearPortal: null,
+          nearInteriorExit: false,
+          nearHouseFood: false,
+          nearHouseBed: false,
+        };
+      }
     }
 
     if (this.player.inInterior && this.activeInterior) {
@@ -1881,51 +2282,53 @@ export class CityWorldEngine {
       };
     }
 
-    const nearMission = this.missions.findNearestStartMission(this.player.x, this.player.z);
-    if (nearMission) {
-      const mTitle = this.language === 'ar' ? nearMission.titleAr : nearMission.title;
-      return {
-        prompt:
-          this.language === 'ar'
-            ? `[E] بدء مهمة: ${mTitle} ($${nearMission.rewardMoney})`
-            : `[E] Start Mission: ${mTitle} ($${nearMission.rewardMoney})`,
-        nearVehicle: null,
-        nearRemoteVehicle: null,
-        nearTrafficAgent: null,
-        nearPoliceUnit: null,
-        nearMissionId: nearMission.id,
-        nearPortal: null,
-        nearInteriorExit: false,
-        nearHouseFood: false,
-        nearHouseBed: false,
-      };
-    }
-
-    for (const portal of INTERIOR_PORTALS) {
-      const dx = portal.exteriorPos.x - this.player.x;
-      const dz = portal.exteriorPos.z - this.player.z;
-      if (dx * dx + dz * dz < 14) {
-        const pName = this.language === 'ar' ? portal.nameAr : portal.name;
-        const isLockedHouse = portal.kind === 'house' && !this.ownedHouses.has(portal.id);
-        const hPrice = portal.housePrice ?? 5500;
+    if (!this.story.active) {
+      const nearMission = this.missions.findNearestStartMission(this.player.x, this.player.z);
+      if (nearMission) {
+        const mTitle = this.language === 'ar' ? nearMission.titleAr : nearMission.title;
         return {
-          prompt: isLockedHouse
-            ? this.language === 'ar'
-              ? `[E] شراء ${pName} للدخول ($${hPrice.toLocaleString()})`
-              : `[E] Buy ${pName} to Enter ($${hPrice.toLocaleString()})`
-            : this.language === 'ar'
-              ? `[E] دخول ${pName}`
-              : `[E] Enter ${pName}`,
+          prompt:
+            this.language === 'ar'
+              ? `[E] بدء مهمة: ${mTitle} ($${nearMission.rewardMoney})`
+              : `[E] Start Mission: ${mTitle} ($${nearMission.rewardMoney})`,
           nearVehicle: null,
           nearRemoteVehicle: null,
           nearTrafficAgent: null,
           nearPoliceUnit: null,
-          nearMissionId: null,
-          nearPortal: portal,
+          nearMissionId: nearMission.id,
+          nearPortal: null,
           nearInteriorExit: false,
           nearHouseFood: false,
           nearHouseBed: false,
         };
+      }
+
+      for (const portal of INTERIOR_PORTALS) {
+        const dx = portal.exteriorPos.x - this.player.x;
+        const dz = portal.exteriorPos.z - this.player.z;
+        if (dx * dx + dz * dz < 14) {
+          const pName = this.language === 'ar' ? portal.nameAr : portal.name;
+          const isLockedHouse = portal.kind === 'house' && !this.ownedHouses.has(portal.id);
+          const hPrice = portal.housePrice ?? 5500;
+          return {
+            prompt: isLockedHouse
+              ? this.language === 'ar'
+                ? `[E] شراء ${pName} للدخول ($${hPrice.toLocaleString()})`
+                : `[E] Buy ${pName} to Enter ($${hPrice.toLocaleString()})`
+              : this.language === 'ar'
+                ? `[E] دخول ${pName}`
+                : `[E] Enter ${pName}`,
+            nearVehicle: null,
+            nearRemoteVehicle: null,
+            nearTrafficAgent: null,
+            nearPoliceUnit: null,
+            nearMissionId: null,
+            nearPortal: portal,
+            nearInteriorExit: false,
+            nearHouseFood: false,
+            nearHouseBed: false,
+          };
+        }
       }
     }
 
@@ -2009,6 +2412,10 @@ export class CityWorldEngine {
       }
     } else {
       if (occupied) {
+        v.occupiedByPlayer = false;
+        this.activeVehicle = null;
+        this.clearAutoFlightWaypoint();
+        this.player.setRidingPose('none', 0, 0);
         this.multiplayer.notifyVehicleExited(v.id, this.player.x, this.player.y, this.player.z);
       }
       this.handleExplosionAt(v.x, v.y, v.z, occupied, 1.25);
@@ -2024,6 +2431,13 @@ export class CityWorldEngine {
   ): void {
     this.handleExplosionAt(rx, ry, rz, false, 1.5, fromJet);
     const blastRadiusSq = 8.0 * 8.0;
+
+    if (!fromJet && !this.activeVehicle) {
+      const pDist = Math.hypot(this.player.x - rx, this.player.y + 1.0 - ry, this.player.z - rz);
+      if (pDist < 6.2) {
+        this.player.applyDamage(Math.round(130 * (1 - pDist / 6.5)));
+      }
+    }
 
     if (fromJet && jetHomingHit) {
       if (this.activeVehicle && !this.activeVehicle.exploded) {
@@ -2128,7 +2542,8 @@ export class CityWorldEngine {
   }
 
   private handleWeaponFire(): void {
-    if (this.player.inInterior) return;
+    const allowInteriorFire = this.story.canShootInInterior();
+    if (this.player.inInterior && !allowInteriorFire) return;
 
     // Transforming Robot Car Handheld Infinite-Ammo RPG Launcher!
     if (this.activeVehicle) {
@@ -2196,6 +2611,7 @@ export class CityWorldEngine {
     const aimHeading = Math.atan2(aimDirX, aimDirZ);
 
     const targets = [
+      ...this.story.getCombatTargets(),
       ...this.wanted.getCombatTargets(),
       ...this.pedestrians.getCombatTargets(),
       ...this.vehicleMgr.vehicles
@@ -2218,7 +2634,10 @@ export class CityWorldEngine {
       aimDirZ,
       targets,
       (id, dmg, rdx, rdy, rdz) => {
-        if (id.startsWith('cop_car_')) {
+        if (id === 'story_guard') {
+          this.story.damageGuard(dmg, this.getStoryCallbacks(), this.language);
+          this.sound.playImpact(0.45);
+        } else if (id.startsWith('cop_car_')) {
           const u = this.wanted.units.find((item) => item.id === id);
           if (u) {
             applyBulletImpactToVehicleRig(u.rig, u.x, u.y, u.z, u.heading, ox, oy, oz, rdx, rdy, rdz);
@@ -2337,6 +2756,18 @@ export class CityWorldEngine {
       return;
     }
 
+    if (this.story.isDialogueOpen()) {
+      if (
+        this.justPressed.has('Enter') ||
+        this.justPressed.has('NumpadEnter') ||
+        this.justPressed.has('Space')
+      ) {
+        this.advanceStoryDialogue();
+      }
+      this.justPressed.clear();
+      return;
+    }
+
     if (this.justPressed.has('KeyT')) {
       this.weatherTime.advanceTimePreset();
     }
@@ -2402,6 +2833,9 @@ export class CityWorldEngine {
             this.wanted.setMinimumStars(1);
           }
           this.onBoardFlightVehicle(this.activeVehicle);
+          if (this.story.active) {
+            this.story.onPlayerBoardedVehicle(this.activeVehicle, this.getStoryCallbacks(), this.language);
+          }
           this.multiplayer.notifyVehicleEntered(
             this.activeVehicle,
             this.activeVehicle.rig.paintMat.color.getHex()
@@ -2484,6 +2918,20 @@ export class CityWorldEngine {
         this.pedestrians.triggerPanicNear(this.activeVehicle.x, this.activeVehicle.z, 18);
       }
     } else if (this.justPressed.has('KeyE')) {
+      if (
+        this.story.active &&
+        this.story.handleInteractKey(
+          this.player.x,
+          this.player.z,
+          this.player.inInterior,
+          Boolean(this.activeVehicle),
+          this.getStoryCallbacks(),
+          this.language
+        )
+      ) {
+        this.justPressed.clear();
+        return;
+      }
       // On-foot contextual interaction
       const ctx = this.getInteractionContext();
       if (ctx.nearMissionId) {
@@ -2577,7 +3025,7 @@ export class CityWorldEngine {
         if (this.bannerTimer <= 0) this.missionBanner = null;
       }
 
-      if (!this.multiplayer.isActive()) {
+      if (!this.multiplayer.isActive() && !this.story.active) {
         this.autoSaveAccum += rawDt;
         if (this.autoSaveAccum >= 8.0) {
           this.autoSaveAccum = 0;
@@ -2586,11 +3034,12 @@ export class CityWorldEngine {
       }
 
       // Sync held weapon mesh visibility
+      const allowInteriorWeapon = this.story.canShootInInterior();
       this.player.setHeldWeaponVisual(
         this.weapons.currentWeapon,
         !this.activeVehicle &&
           !this.player.isSwimming &&
-          !this.player.inInterior &&
+          (!this.player.inInterior || allowInteriorWeapon) &&
           !this.cameraCtrl.firstPerson &&
           this.weapons.currentWeapon !== 'fists'
       );
@@ -2602,9 +3051,16 @@ export class CityWorldEngine {
           this.activeVehicle.robotTransformed &&
           !this.activeVehicle.exploded
       );
-      if ((this.firingActive || this.held.has('KeyG')) && !this.player.inInterior && (!this.activeVehicle || inRobotRpgMode)) {
+      if (
+        !this.story.isDialogueOpen() &&
+        (this.firingActive || this.held.has('KeyG')) &&
+        (!this.player.inInterior || allowInteriorWeapon) &&
+        (!this.activeVehicle || inRobotRpgMode)
+      ) {
         this.handleWeaponFire();
       }
+
+      const dialogueFreeze = this.story.isDialogueOpen();
 
       // 1. Update Player or Active Vehicle
       if (this.activeVehicle) {
@@ -2614,13 +3070,13 @@ export class CityWorldEngine {
         const kbSteer =
           (this.held.has('KeyA') || this.held.has('ArrowLeft') ? 1 : 0) -
           (this.held.has('KeyD') || this.held.has('ArrowRight') ? 1 : 0);
-        const throttle = Math.abs(kbThrottle) > 0 ? kbThrottle : this.virtualInput.throttle;
-        const steer = Math.abs(kbSteer) > 0 ? kbSteer : this.virtualInput.steer;
-        const handbrake = this.held.has('Space') || this.virtualInput.handbrake;
+        const throttle = dialogueFreeze ? 0 : Math.abs(kbThrottle) > 0 ? kbThrottle : this.virtualInput.throttle;
+        const steer = dialogueFreeze ? 0 : Math.abs(kbSteer) > 0 ? kbSteer : this.virtualInput.steer;
+        const handbrake = dialogueFreeze ? true : this.held.has('Space') || this.virtualInput.handbrake;
         const kbClimb =
           (this.held.has('Space') ? 1 : 0) -
           (this.held.has('ShiftLeft') || this.held.has('ShiftRight') ? 1 : 0);
-        const climb = kbClimb !== 0 ? kbClimb : this.virtualInput.climb;
+        const climb = dialogueFreeze ? 0 : kbClimb !== 0 ? kbClimb : this.virtualInput.climb;
 
         const activeCanFly = canFlyVehicle(this.activeVehicle.classId);
         const wasWingsDeployed = Boolean(this.activeVehicle.wingsDeployed);
@@ -2725,10 +3181,12 @@ export class CityWorldEngine {
         const kbMoveZ =
           (this.held.has('KeyW') || this.held.has('ArrowUp') ? 1 : 0) -
           (this.held.has('KeyS') || this.held.has('ArrowDown') ? 1 : 0);
-        const moveX = Math.abs(kbMoveX) > 0 ? kbMoveX : this.virtualInput.moveX;
-        const moveZ = Math.abs(kbMoveZ) > 0 ? kbMoveZ : this.virtualInput.moveZ;
-        const sprint = this.held.has('ShiftLeft') || this.held.has('ShiftRight') || this.virtualInput.sprint;
-        const jump = this.held.has('Space') || this.virtualInput.jump;
+        const moveX = dialogueFreeze ? 0 : Math.abs(kbMoveX) > 0 ? kbMoveX : this.virtualInput.moveX;
+        const moveZ = dialogueFreeze ? 0 : Math.abs(kbMoveZ) > 0 ? kbMoveZ : this.virtualInput.moveZ;
+        const sprint = dialogueFreeze
+          ? false
+          : this.held.has('ShiftLeft') || this.held.has('ShiftRight') || this.virtualInput.sprint;
+        const jump = dialogueFreeze ? false : this.held.has('Space') || this.virtualInput.jump;
 
         this.player.update(
           dt,
@@ -2792,9 +3250,9 @@ export class CityWorldEngine {
         weaponId:
           fpVehicleType === 'robot'
             ? 'rpg'
-            : this.player.inInterior
-              ? 'fists'
-              : this.weapons.currentWeapon,
+            : !this.player.inInterior || allowInteriorWeapon
+              ? this.weapons.currentWeapon
+              : 'fists',
         steerAngle: this.activeVehicle?.steerAngle ?? 0,
         speed: this.activeVehicle ? this.activeVehicle.forwardSpeed : Math.hypot(this.player.vx, this.player.vz),
         isMoving:
@@ -2824,6 +3282,7 @@ export class CityWorldEngine {
 
       const rocketDynamicTargets = this.weapons.hasActiveRockets()
         ? [
+            ...this.story.getCombatTargets().map((t) => ({ x: t.x, y: t.y, z: t.z, radius: t.radius })),
             ...this.vehicleMgr.vehicles
               .filter((v) => !v.exploded && v !== this.activeVehicle)
               .map((v) => ({ x: v.x, y: v.y, z: v.z, radius: Math.max(1.8, v.rig.spec.width * 0.9) })),
@@ -3045,79 +3504,92 @@ export class CityWorldEngine {
         );
       }
 
-      this.missions.update(
-        dt,
-        this.simTime,
-        this.player.x,
-        this.player.z,
-        this.wanted.stars,
-        this.language,
-        (stars) => this.wanted.addCrimeHeat(stars * 95),
-        (evt) => {
-          if (evt.reward) this.money += evt.reward;
-          this.sound.playMissionCue(evt.kind);
-          this.missionBanner = {
-            title: evt.title,
-            subtitle: evt.subtitle,
-            kind: evt.kind === 'fail' ? 'fail' : evt.kind === 'success' ? 'success' : 'info',
-          };
-          this.bannerTimer = 5.0;
-          if (evt.kind === 'success') {
-            this.saveSinglePlayerProgress(false);
+      // Check player death BEFORE story/mission updates so dying fails active missions immediately
+      if (this.player.health <= 0) {
+        this.handlePlayerDeath();
+      } else {
+        if (this.story.active) {
+          this.story.update(
+            dt,
+            this.player.x,
+            this.player.y,
+            this.player.z,
+            this.player.inInterior,
+            Boolean(this.activeVehicle),
+            this.wanted.stars,
+            this.getStoryCallbacks(),
+            this.language
+          );
+        } else {
+          this.missions.update(
+            dt,
+            this.simTime,
+            this.player.x,
+            this.player.z,
+            this.wanted.stars,
+            this.language,
+            (stars) => this.wanted.addCrimeHeat(stars * 95),
+            (evt) => {
+              if (evt.reward) this.money += evt.reward;
+              this.sound.playMissionCue(evt.kind);
+              this.missionBanner = {
+                title: evt.title,
+                subtitle: evt.subtitle,
+                kind: evt.kind === 'fail' ? 'fail' : evt.kind === 'success' ? 'success' : 'info',
+              };
+              this.bannerTimer = 5.0;
+              if (evt.kind === 'success') {
+                this.saveSinglePlayerProgress(false);
+              }
+            }
+          );
+        }
+
+        // Clear custom waypoint when reached (including arriving at target city/country!)
+        if (this.customWaypoint) {
+          const dx = this.customWaypoint.x - this.player.x;
+          const dz = this.customWaypoint.z - this.player.z;
+          const distSq = dx * dx + dz * dz;
+          const reachedAuroriaCity =
+            this.isAutoFlightWaypoint &&
+            this.autoFlightTargetKind === 'auroria' &&
+            this.player.x >= 795 &&
+            this.player.z >= -340 &&
+            this.player.z <= 100;
+          const reachedMainlandCity =
+            this.isAutoFlightWaypoint &&
+            this.autoFlightTargetKind === 'mainland' &&
+            this.player.x <= 365 &&
+            this.player.x >= -440 &&
+            this.player.z >= -440 &&
+            this.player.z <= 400;
+
+          if (distSq < (this.isAutoFlightWaypoint ? 36 * 36 : 81) || reachedAuroriaCity || reachedMainlandCity) {
+            const targetKind = this.autoFlightTargetKind;
+            this.customWaypoint = null;
+            this.isAutoFlightWaypoint = false;
+            this.autoFlightTargetKind = null;
+            this.missionBanner = {
+              title:
+                targetKind === 'auroria'
+                  ? this.language === 'ar'
+                    ? 'وصلت إلى بلد الأثرياء (أوروريا)!'
+                    : 'Arrived in Auroria Rich Country!'
+                  : targetKind === 'mainland'
+                    ? this.language === 'ar'
+                      ? 'وصلت إلى المدينة الرئيسية!'
+                      : 'Arrived in CityWorld!'
+                    : this.language === 'ar'
+                      ? 'تم الوصول للوجهة'
+                      : 'Destination Reached',
+              subtitle:
+                this.language === 'ar' ? 'تمت إزالة التحديد من الخريطة تلقائياً.' : 'Map destination marker cleared.',
+              kind: targetKind ? 'success' : 'info',
+            };
+            this.bannerTimer = 3.2;
           }
         }
-      );
-
-      // Clear custom waypoint when reached (including arriving at target city/country!)
-      if (this.customWaypoint) {
-        const dx = this.customWaypoint.x - this.player.x;
-        const dz = this.customWaypoint.z - this.player.z;
-        const distSq = dx * dx + dz * dz;
-        const reachedAuroriaCity =
-          this.isAutoFlightWaypoint &&
-          this.autoFlightTargetKind === 'auroria' &&
-          this.player.x >= 795 &&
-          this.player.z >= -340 &&
-          this.player.z <= 100;
-        const reachedMainlandCity =
-          this.isAutoFlightWaypoint &&
-          this.autoFlightTargetKind === 'mainland' &&
-          this.player.x <= 365 &&
-          this.player.x >= -440 &&
-          this.player.z >= -440 &&
-          this.player.z <= 400;
-
-        if (distSq < (this.isAutoFlightWaypoint ? 36 * 36 : 81) || reachedAuroriaCity || reachedMainlandCity) {
-          const targetKind = this.autoFlightTargetKind;
-          this.customWaypoint = null;
-          this.isAutoFlightWaypoint = false;
-          this.autoFlightTargetKind = null;
-          this.missionBanner = {
-            title:
-              targetKind === 'auroria'
-                ? this.language === 'ar'
-                  ? 'وصلت إلى بلد الأثرياء (أوروريا)!'
-                  : 'Arrived in Auroria Rich Country!'
-                : targetKind === 'mainland'
-                  ? this.language === 'ar'
-                    ? 'وصلت إلى المدينة الرئيسية!'
-                    : 'Arrived in CityWorld!'
-                  : this.language === 'ar'
-                    ? 'تم الوصول للوجهة'
-                    : 'Destination Reached',
-            subtitle:
-              this.language === 'ar' ? 'تمت إزالة التحديد من الخريطة تلقائياً.' : 'Map destination marker cleared.',
-            kind: targetKind ? 'success' : 'info',
-          };
-          this.bannerTimer = 3.2;
-        }
-      }
-      this.refreshGpsRoute(false);
-
-      // Check player death
-      if (this.player.health <= 0) {
-        this.phase = 'wasted';
-        this.pushHud();
+        this.refreshGpsRoute(false);
       }
 
       // Continuous Audio update
@@ -3194,7 +3666,9 @@ export class CityWorldEngine {
   private refreshGpsRoute(force: boolean): void {
     const refX = this.activeInterior ? this.activeInterior.exteriorPos.x : this.player.x;
     const refZ = this.activeInterior ? this.activeInterior.exteriorPos.z : this.player.z;
-    const missionTarget = this.missions.getCurrentTargetPos();
+    const missionTarget = this.story.active
+      ? this.story.getGpsTarget()
+      : this.missions.getCurrentTargetPos();
     const target = missionTarget ?? this.customWaypoint;
 
     this.gpsTargetPos = target;
@@ -3264,37 +3738,43 @@ export class CityWorldEngine {
       if (j.active) markers.push({ id: `jet_${idx}`, type: 'police', x: j.x, z: j.z });
     });
 
-    INTERIOR_PORTALS.forEach((p) => {
-      markers.push({
-        id: p.id,
-        type: 'interior',
-        interiorKind: p.kind,
-        x: p.exteriorPos.x,
-        z: p.exteriorPos.z,
-        label: this.language === 'ar' ? p.nameAr : p.name,
-      });
-    });
-
-    if (!this.missions.activeMission) {
-      MISSION_REGISTRY.forEach((m) => {
-        markers.push({
-          id: m.id,
-          type: 'mission',
-          x: m.startPos.x,
-          z: m.startPos.z,
-          label: this.language === 'ar' ? m.titleAr : m.title,
-        });
-      });
+    if (this.story.active) {
+      for (const sm of this.story.getMapMarkers(this.language)) {
+        markers.push(sm);
+      }
     } else {
-      const target = this.missions.getCurrentTargetPos();
-      if (target) {
+      INTERIOR_PORTALS.forEach((p) => {
         markers.push({
-          id: 'obj',
-          type: 'objective',
-          x: target.x,
-          z: target.z,
-          label: this.language === 'ar' ? 'الهدف' : 'Objective',
+          id: p.id,
+          type: 'interior',
+          interiorKind: p.kind,
+          x: p.exteriorPos.x,
+          z: p.exteriorPos.z,
+          label: this.language === 'ar' ? p.nameAr : p.name,
         });
+      });
+
+      if (!this.missions.activeMission) {
+        MISSION_REGISTRY.forEach((m) => {
+          markers.push({
+            id: m.id,
+            type: 'mission',
+            x: m.startPos.x,
+            z: m.startPos.z,
+            label: this.language === 'ar' ? m.titleAr : m.title,
+          });
+        });
+      } else {
+        const target = this.missions.getCurrentTargetPos();
+        if (target) {
+          markers.push({
+            id: 'obj',
+            type: 'objective',
+            x: target.x,
+            z: target.z,
+            label: this.language === 'ar' ? 'الهدف' : 'Objective',
+          });
+        }
       }
     }
 
@@ -3331,22 +3811,23 @@ export class CityWorldEngine {
           ? 'P'
           : String(Math.min(6, Math.max(1, Math.ceil(speedKmh / 28))));
 
-    const activeMissionObj = this.missions.activeMission
-      ? {
-          id: this.missions.activeMission.id,
-          title:
-            this.language === 'ar'
-              ? this.missions.activeMission.titleAr
-              : this.missions.activeMission.title,
-          stepDescription:
-            this.language === 'ar'
-              ? this.missions.activeMission.steps[this.missions.currentStepIndex].descriptionAr
-              : this.missions.activeMission.steps[this.missions.currentStepIndex].description,
-          timeRemaining: this.missions.timeRemaining,
-          progressText: this.missions.getProgressText(this.language),
-          targetPos: this.missions.getCurrentTargetPos(),
-        }
-      : null;
+    const activeMissionObj =
+      !this.story.active && this.missions.activeMission
+        ? {
+            id: this.missions.activeMission.id,
+            title:
+              this.language === 'ar'
+                ? this.missions.activeMission.titleAr
+                : this.missions.activeMission.title,
+            stepDescription:
+              this.language === 'ar'
+                ? this.missions.activeMission.steps[this.missions.currentStepIndex].descriptionAr
+                : this.missions.activeMission.steps[this.missions.currentStepIndex].description,
+            timeRemaining: this.missions.timeRemaining,
+            progressText: this.missions.getProgressText(this.language),
+            targetPos: this.missions.getCurrentTargetPos(),
+          }
+        : null;
 
     const nearPed =
       !this.activeVehicle && !isPassengerRiding && !this.player.inInterior && !this.player.isSwimming
@@ -3451,6 +3932,8 @@ export class CityWorldEngine {
       hasSavedGame: this.hasSavedGame,
       lastSavedAt: this.lastSavedAt,
       multiplayer: this.multiplayer.getHudState(),
+      story: this.story.getHudState(this.language),
+      wastedFailedMission: this.wastedFailedMissionName,
     });
   }
 
@@ -3470,6 +3953,7 @@ export class CityWorldEngine {
     this.wanted.dispose();
     this.weapons.dispose();
     this.missions.dispose();
+    this.story.dispose();
     this.gpsRenderer.dispose();
     this.weatherTime.dispose();
     this.world.dispose();

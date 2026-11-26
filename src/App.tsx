@@ -12,6 +12,7 @@ import {
   PhoneModal,
   WastedModal,
 } from './components/Modals';
+import { StoryDialogueBox, StoryVictoryModal } from './components/StoryOverlay';
 import { TitleScreen } from './components/TitleScreen';
 import { WorldMapModal } from './components/WorldMapModal';
 
@@ -86,7 +87,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v7.2.html';
+        a.download = 'CityWorld-v8.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -105,7 +106,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v7.2.html';
+        a.download = 'CityWorld-v8.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -118,7 +119,7 @@ export default function App() {
 
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = 'CityWorld-v7.2.html';
+    a.download = 'CityWorld-v8.html';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -173,8 +174,10 @@ export default function App() {
           savedMoney={hud.money}
           savedMissions={hud.completedMissionIds.length}
           totalMissions={MISSION_REGISTRY.length}
+          storyCompleted={hud.story.completed}
           onSetLanguage={(lang) => engineRef.current?.setLanguage(lang)}
           onStart={() => engineRef.current?.startGame()}
+          onStartStory={() => engineRef.current?.startStoryMode()}
           onNewGame={() => engineRef.current?.startNewSinglePlayerGame()}
           onOpenMultiplayer={() => engineRef.current?.openMultiplayerLobby()}
           onDownloadHtml={handleDownloadStandaloneHtml}
@@ -202,7 +205,10 @@ export default function App() {
         />
       )}
 
-      {hud?.phase === 'playing' && touchEnabled && (
+      {hud?.phase === 'playing' &&
+        touchEnabled &&
+        !hud.story.dialogue &&
+        !hud.story.justFinishedModal && (
         <MobileControls
           language={hud.language}
           buttonScale={buttonScale}
@@ -262,6 +268,7 @@ export default function App() {
           onLeaveMultiplayerSession={() => engineRef.current?.leaveMultiplayerSession()}
           onSaveGame={() => engineRef.current?.saveSinglePlayerProgress(true) ?? false}
           onResetSave={() => engineRef.current?.resetSinglePlayerProgress()}
+          onExitStory={() => engineRef.current?.exitStoryToMenu()}
         />
       )}
 
@@ -329,8 +336,25 @@ export default function App() {
       {hud?.phase === 'wasted' && (
         <WastedModal
           language={hud.language}
+          isStoryActive={hud.story.active}
+          failedMissionName={hud.wastedFailedMission}
           onRespawn={() => engineRef.current?.respawnAfterWasted()}
+          onExitStory={() => engineRef.current?.exitStoryToMenu()}
         />
+      )}
+
+      {hud && (
+        <>
+          <StoryDialogueBox
+            hud={hud}
+            onAdvanceDialogue={() => engineRef.current?.advanceStoryDialogue()}
+          />
+          <StoryVictoryModal
+            hud={hud}
+            onGoFreeRoam={() => engineRef.current?.finishStoryToFreeRoam()}
+            onBackToMenu={() => engineRef.current?.finishStoryToMenu()}
+          />
+        </>
       )}
     </div>
   );

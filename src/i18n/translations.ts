@@ -66,6 +66,11 @@ export const TRANSLATIONS = {
     wastedDesc:
       'Paramedics rushed you to CityWorld General Hospital. Your health and ammo are restored, and your Wanted Level is cleared.',
     respawnHospital: 'Respawn Outside Hospital',
+    wastedStoryTitle: 'STORY FAILED — YOU DIED',
+    wastedStoryDesc:
+      'You died during the heist! You lost Story Mode and must restart from the very beginning.',
+    restartStoryBtn: 'Restart Story Mode',
+    wastedMissionFailedLabel: 'Mission Failed',
     atlasTitle: 'CITYWORLD ATLAS',
     atlasSub: 'Click anywhere on the map to set a GPS Waypoint',
     clearWaypoint: 'Clear Waypoint',
@@ -186,6 +191,22 @@ export const TRANSLATIONS = {
     mpCopyBtn: 'Copy',
     mpCopiedBtn: 'Copied!',
     mpGenerating: 'Generating code...',
+    storyModeBtn: 'Story Mode',
+    storyCompletedBtn: 'Story Completed ✓',
+    storyLockedHint: 'Story Mode can only be played once and is already finished.',
+    storyHeaderTag: 'STORY MODE · BANK HEIST',
+    storyOkEnter: 'OK (Enter)',
+    storyTapEnterHint: 'Press Enter or click OK to continue',
+    storyVictoryTitle: 'STORY MODE COMPLETE!',
+    storyVictoryDesc:
+      'You and Tariq pulled off the night bank heist, escaped the police chase, and secured the $10,000 score!',
+    storyRewardLabel: 'Story Reward',
+    storyLockedNotice: 'Story Mode is now completed and cannot be replayed.',
+    storyBackToMenu: 'Main Menu',
+    storyGoFreeRoam: 'Continue in Free Roam',
+    storyExitToMenu: 'Exit Story Mode',
+    storyExitResetHint:
+      'Exiting cancels current progress — you cannot resume mid-way and will restart from the beginning.',
     weaponNames: {
       fists: 'Fists',
       pistol: 'CW-9 Pistol',
@@ -286,6 +307,11 @@ export const TRANSLATIONS = {
     wastedDesc:
       'تم نقلك إلى مستشفى CityWorld العام. تم علاجك وتعبئة ذخيرتك وإزالة نجوم المطاردة.',
     respawnHospital: 'العودة بجانب المستشفى',
+    wastedStoryTitle: 'خسرت في طور القصة',
+    wastedStoryDesc:
+      'لقد متّ أثناء المهمة! خسرت التقدم ويجب إعادة طور القصة من البداية.',
+    restartStoryBtn: 'إعادة طور القصة من البداية',
+    wastedMissionFailedLabel: 'فشلت المهمة',
     atlasTitle: 'خريطة CityWorld الكاملة',
     atlasSub: 'اضغط في أي مكان على الخريطة لوضع علامة GPS',
     clearWaypoint: 'إزالة العلامة',
@@ -406,6 +432,22 @@ export const TRANSLATIONS = {
     mpCopyBtn: 'نسخ الكود',
     mpCopiedBtn: 'تم النسخ!',
     mpGenerating: 'جارٍ توليد الكود...',
+    storyModeBtn: 'طور القصة',
+    storyCompletedBtn: 'تم إنهاء القصة ✓',
+    storyLockedHint: 'لقد أكملت طور القصة مسبقاً ولا يمكن إعادته.',
+    storyHeaderTag: 'طور القصة · سرقة البنك',
+    storyOkEnter: 'موافق (Enter)',
+    storyTapEnterHint: 'اضغط Enter أو موافق لمتابعة المحادثة',
+    storyVictoryTitle: 'تم إنهاء طور القصة بنجاح!',
+    storyVictoryDesc:
+      'نجحت أنت وصديقك طارق في اقتحام البنك ليلاً وأخذ 10,000 دولار والهروب من مطاردة الشرطة بنجاح!',
+    storyRewardLabel: 'مكافأة مهمة القصة',
+    storyLockedNotice: 'تم إكمال طور القصة الآن ولا يمكن إعادته مرة أخرى.',
+    storyBackToMenu: 'القائمة الرئيسية',
+    storyGoFreeRoam: 'متابعة في اللعب الحر',
+    storyExitToMenu: 'الخروج من وضع القصه',
+    storyExitResetHint:
+      'عند الخروج سيتم إلغاء التقدم الحالي ولن يمكنك الاستكمال من نفس المكان — ستبدأ القصة من الأول.',
     weaponNames: {
       fists: 'بوكس / يد',
       pistol: 'مسدس CW-9',

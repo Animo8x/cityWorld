@@ -69,6 +69,7 @@ interface PauseModalProps {
   onLeaveMultiplayerSession: () => void;
   onSaveGame: () => boolean;
   onResetSave: () => void;
+  onExitStory?: () => void;
 }
 
 const QUALITY_MODES: QualityMode[] = ['very_low', 'low', 'medium', 'high', 'ultra'];
@@ -92,6 +93,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onLeaveMultiplayerSession,
   onSaveGame,
   onResetSave,
+  onExitStory,
 }) => {
   const [tab, setTab] = useState<'environment' | 'multiplayer' | 'missions' | 'unity'>('environment');
   const [codeInput, setCodeInput] = useState('');
@@ -130,27 +132,31 @@ export const PauseModal: React.FC<PauseModalProps> = ({
           >
             <Settings className="w-3.5 h-3.5" /> {t.settingsTab}
           </button>
-          <button
-            onClick={() => setTab('multiplayer')}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
-              tab === 'multiplayer' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" /> {t.mpTab}
-            {hud.multiplayer.active && (
-              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-black">
-                {hud.multiplayer.playerCount}/{hud.multiplayer.maxPlayers}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab('missions')}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
-              tab === 'missions' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
-            }`}
-          >
-            <Compass className="w-3.5 h-3.5" /> {t.missionsTab} ({MISSION_REGISTRY.length})
-          </button>
+          {!hud.story.active && (
+            <>
+              <button
+                onClick={() => setTab('multiplayer')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
+                  tab === 'multiplayer' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" /> {t.mpTab}
+                {hud.multiplayer.active && (
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-black">
+                    {hud.multiplayer.playerCount}/{hud.multiplayer.maxPlayers}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setTab('missions')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
+                  tab === 'missions' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
+                }`}
+              >
+                <Compass className="w-3.5 h-3.5" /> {t.missionsTab} ({MISSION_REGISTRY.length})
+              </button>
+            </>
+          )}
           <button
             onClick={() => setTab('unity')}
             className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 cursor-pointer shrink-0 ${
@@ -359,6 +365,20 @@ export const PauseModal: React.FC<PauseModalProps> = ({
           {tab === 'environment' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-4 rounded-lg bg-slate-950/70 border border-slate-800 space-y-4">
+                {hud.story.active && onExitStory && (
+                  <div className="p-3 rounded-lg bg-rose-950/60 border border-rose-500/60 space-y-2">
+                    <button
+                      onClick={onExitStory}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-black cursor-pointer shadow-lg"
+                    >
+                      <LogOut className="w-4 h-4" /> {t.storyExitToMenu}
+                    </button>
+                    <p className="text-[11px] font-bold text-rose-200/90 leading-relaxed text-center">
+                      {t.storyExitResetHint}
+                    </p>
+                  </div>
+                )}
+
                 {/* Language Switcher */}
                 <div>
                   <h4 className="flex items-center gap-1.5 text-xs font-bold text-white mb-2">
@@ -531,69 +551,71 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                   )}
                 </div>
 
-                {/* Single Player Save & Reset */}
-                <div className="pt-3 border-t border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                      <Save className="w-3.5 h-3.5" /> {t.saveTitle}
-                    </h4>
-                    <span className="text-[10px] font-bold text-slate-400">
-                      {hud.lastSavedAt
-                        ? `${t.lastSavedLabel}: ${new Date(hud.lastSavedAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}`
-                        : t.notSavedYet}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    {hud.multiplayer.active ? t.saveDisabledInMp : t.saveDesc}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      disabled={hud.multiplayer.active}
-                      onClick={() => {
-                        if (onSaveGame()) {
-                          setSaveNotice(true);
-                          setTimeout(() => setSaveNotice(false), 2500);
-                        }
-                      }}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 text-xs font-black cursor-pointer"
-                    >
-                      <Save className="w-3.5 h-3.5" /> {t.saveNowBtn}
-                    </button>
-
-                    {!confirmResetSave ? (
+                {/* Single Player Save & Reset (Free Roam only — hidden in Story Mode) */}
+                {!hud.story.active && (
+                  <div className="pt-3 border-t border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                        <Save className="w-3.5 h-3.5" /> {t.saveTitle}
+                      </h4>
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {hud.lastSavedAt
+                          ? `${t.lastSavedLabel}: ${new Date(hud.lastSavedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}`
+                          : t.notSavedYet}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      {hud.multiplayer.active ? t.saveDisabledInMp : t.saveDesc}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
                       <button
                         disabled={hud.multiplayer.active}
-                        onClick={() => setConfirmResetSave(true)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-500/70 disabled:opacity-40 text-slate-300 hover:text-rose-200 text-xs font-bold cursor-pointer"
+                        onClick={() => {
+                          if (onSaveGame()) {
+                            setSaveNotice(true);
+                            setTimeout(() => setSaveNotice(false), 2500);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 text-xs font-black cursor-pointer"
                       >
-                        <RotateCcw className="w-3.5 h-3.5 text-rose-400" /> {t.resetSaveBtn}
+                        <Save className="w-3.5 h-3.5" /> {t.saveNowBtn}
                       </button>
-                    ) : (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-rose-950/80 border border-rose-500/70">
-                        <span className="text-[11px] font-bold text-rose-200">{t.confirmResetLabel}</span>
+
+                      {!confirmResetSave ? (
                         <button
-                          onClick={() => {
-                            setConfirmResetSave(false);
-                            onResetSave();
-                          }}
-                          className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black cursor-pointer"
+                          disabled={hud.multiplayer.active}
+                          onClick={() => setConfirmResetSave(true)}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-500/70 disabled:opacity-40 text-slate-300 hover:text-rose-200 text-xs font-bold cursor-pointer"
                         >
-                          OK
+                          <RotateCcw className="w-3.5 h-3.5 text-rose-400" /> {t.resetSaveBtn}
                         </button>
-                        <button
-                          onClick={() => setConfirmResetSave(false)}
-                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold cursor-pointer"
-                        >
-                          {t.cancelLabel}
-                        </button>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-rose-950/80 border border-rose-500/70">
+                          <span className="text-[11px] font-bold text-rose-200">{t.confirmResetLabel}</span>
+                          <button
+                            onClick={() => {
+                              setConfirmResetSave(false);
+                              onResetSave();
+                            }}
+                            className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black cursor-pointer"
+                          >
+                            OK
+                          </button>
+                          <button
+                            onClick={() => setConfirmResetSave(false)}
+                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold cursor-pointer"
+                          >
+                            {t.cancelLabel}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {saveNotice && <div className="text-[11px] font-bold text-emerald-400">{t.saveSuccessMsg}</div>}
                   </div>
-                  {saveNotice && <div className="text-[11px] font-bold text-emerald-400">{t.saveSuccessMsg}</div>}
-                </div>
+                )}
 
                 {/* Download Latest Standalone HTML */}
                 <div className="pt-3 border-t border-slate-800 space-y-2">
@@ -601,7 +623,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     onClick={onDownloadHtml}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/60 text-cyan-200 text-xs font-black cursor-pointer"
                   >
-                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v7.2)
+                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v8)
                   </button>
                   <p className="text-[11px] text-slate-400">{t.downloadHtmlHint}</p>
                 </div>
@@ -779,22 +801,55 @@ export const InteriorShopModal: React.FC<InteriorShopModalProps> = ({ hud, onAct
 
 interface WastedModalProps {
   language: Language;
+  isStoryActive: boolean;
+  failedMissionName: string | null;
   onRespawn: () => void;
+  onExitStory?: () => void;
 }
 
-export const WastedModal: React.FC<WastedModalProps> = ({ language, onRespawn }) => {
+export const WastedModal: React.FC<WastedModalProps> = ({
+  language,
+  isStoryActive,
+  failedMissionName,
+  onRespawn,
+  onExitStory,
+}) => {
   const t = getText(language);
   return (
     <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-rose-950/85 flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-slate-950 border border-rose-500/60 rounded-xl p-8 text-center shadow-2xl">
-        <h2 className="text-3xl md:text-4xl font-black tracking-widest text-rose-500 uppercase">{t.wastedTitle}</h2>
-        <p className="text-sm text-slate-300 mt-2">{t.wastedDesc}</p>
-        <button
-          onClick={onRespawn}
-          className="mt-6 inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm uppercase cursor-pointer"
-        >
-          <RotateCcw className="w-4 h-4" /> {t.respawnHospital}
-        </button>
+        <h2 className="text-2xl md:text-3xl font-black tracking-wide text-rose-500 uppercase">
+          {isStoryActive ? t.wastedStoryTitle : t.wastedTitle}
+        </h2>
+        <p className="text-sm text-slate-300 mt-2 leading-relaxed">
+          {isStoryActive ? t.wastedStoryDesc : t.wastedDesc}
+        </p>
+
+        {!isStoryActive && failedMissionName && (
+          <div className="mt-4 px-4 py-2.5 rounded-lg bg-rose-950/80 border border-rose-500/60 text-xs sm:text-sm font-black text-rose-300">
+            {t.wastedMissionFailedLabel}: {failedMissionName}
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-col gap-2.5">
+          <button
+            onClick={onRespawn}
+            className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm uppercase cursor-pointer"
+          >
+            <RotateCcw className="w-4 h-4" />
+            {isStoryActive ? t.restartStoryBtn : t.respawnHospital}
+          </button>
+
+          {isStoryActive && onExitStory && (
+            <button
+              onClick={onExitStory}
+              className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-xs sm:text-sm border border-slate-700 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 text-rose-400" />
+              {t.storyExitToMenu}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

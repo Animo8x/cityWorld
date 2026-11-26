@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Globe, RotateCcw, Save, Users } from 'lucide-react';
+import { BookOpen, CheckCircle2, Download, Globe, Lock, RotateCcw, Save, Users } from 'lucide-react';
 import { Language } from '../game/types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { getText } from '../i18n/translations';
@@ -10,8 +10,10 @@ interface TitleScreenProps {
   savedMoney: number;
   savedMissions: number;
   totalMissions: number;
+  storyCompleted: boolean;
   onSetLanguage: (lang: Language) => void;
   onStart: () => void;
+  onStartStory: () => void;
   onNewGame: () => void;
   onOpenMultiplayer: () => void;
   onDownloadHtml: () => void;
@@ -23,8 +25,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   savedMoney,
   savedMissions,
   totalMissions,
+  storyCompleted,
   onSetLanguage,
   onStart,
+  onStartStory,
   onNewGame,
   onOpenMultiplayer,
   onDownloadHtml,
@@ -98,12 +102,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             {t.titleDesc}
           </p>
           <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded bg-slate-900/85 border border-cyan-400/40 text-[11px] font-bold text-cyan-300">
-            <span>v7.2</span>
+            <span>v8</span>
             <span className="text-slate-400">·</span>
             <span>
               {language === 'ar'
-                ? 'سينتيناريو 419 + شرطة وطائرات حربية + 5 روبوتات + أونلاين'
-                : 'Centenario 419 + Fighter Jets & Wanted + 5 Robots + Online'}
+                ? 'طور القصة (سرقة البنك) + سينتيناريو 419 + شرطة وطائرات حربية + أونلاين'
+                : 'Story Mode (Bank Heist) + Centenario 419 + Fighter Jets & Wanted + Online'}
             </span>
           </div>
         </div>
@@ -134,6 +138,30 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             className="px-7 py-3.5 md:px-8 md:py-4 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-extrabold text-base md:text-lg tracking-wide uppercase shadow-xl transition-transform cursor-pointer"
           >
             {hasSavedGame ? t.continueWorld : t.enterWorld}
+          </button>
+
+          <button
+            onClick={onStartStory}
+            disabled={storyCompleted}
+            title={storyCompleted ? t.storyLockedHint : t.storyModeBtn}
+            className={`flex items-center gap-2 px-6 py-3.5 md:px-7 md:py-4 rounded-lg font-extrabold text-base md:text-lg tracking-wide shadow-xl border transition-transform ${
+              storyCompleted
+                ? 'bg-slate-800/90 border-slate-600 text-slate-400 cursor-not-allowed opacity-80'
+                : 'bg-cyan-500 hover:bg-cyan-400 active:scale-[0.99] text-slate-950 border-cyan-200 cursor-pointer'
+            }`}
+          >
+            {storyCompleted ? (
+              <>
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <span>{t.storyCompletedBtn}</span>
+                <Lock className="w-4 h-4 text-slate-400" />
+              </>
+            ) : (
+              <>
+                <BookOpen className="w-5 h-5" />
+                <span>{t.storyModeBtn}</span>
+              </>
+            )}
           </button>
 
           <button

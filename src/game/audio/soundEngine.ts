@@ -351,6 +351,43 @@ export class SoundEngine {
     });
   }
 
+  public playPhoneRing(): void {
+    if (!this.initialized || !this.ctx || !this.sfxGain) return;
+    const t = this.ctx.currentTime;
+    [0, 0.22, 0.55, 0.77].forEach((offset, i) => {
+      if (!this.ctx || !this.sfxGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(i % 2 === 0 ? 1180 : 1480, t + offset);
+      gain.gain.setValueAtTime(0.12, t + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.16);
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(t + offset);
+      osc.stop(t + offset + 0.17);
+    });
+  }
+
+  public playCashPickup(): void {
+    if (!this.initialized || !this.ctx || !this.sfxGain) return;
+    const t = this.ctx.currentTime;
+    [659.25, 880, 1174.66, 1567.98].forEach((freq, idx) => {
+      if (!this.ctx || !this.sfxGain) return;
+      const start = t + idx * 0.065;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.14, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.24);
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(start);
+      osc.stop(start + 0.26);
+    });
+  }
+
   public playGunshot(isSmg: boolean): void {
     if (!this.initialized || !this.ctx || !this.sfxGain) return;
     const t = this.ctx.currentTime;

@@ -268,6 +268,36 @@ export interface MultiplayerHudState {
   };
 }
 
+export type StoryStage =
+  | 'idle'
+  | 'apartment_call'
+  | 'exit_apartment'
+  | 'board_car'
+  | 'drive_to_bank'
+  | 'enter_bank'
+  | 'shoot_guard'
+  | 'grab_cash'
+  | 'exit_bank_escape'
+  | 'escape_police'
+  | 'completed';
+
+export interface StoryDialogueLine {
+  speaker: string;
+  text: string;
+  index: number;
+  total: number;
+}
+
+export interface StoryHudState {
+  active: boolean;
+  completed: boolean;
+  stage: StoryStage;
+  objectiveText: string | null;
+  dialogue: StoryDialogueLine | null;
+  justFinishedModal: boolean;
+  rewardAmount: number;
+}
+
 export interface HudSnapshot {
   phase: GamePhase;
   language: Language;
@@ -341,4 +371,6 @@ export interface HudSnapshot {
   hasSavedGame: boolean;
   lastSavedAt: number | null;
   multiplayer: MultiplayerHudState;
+  story: StoryHudState;
+  wastedFailedMission: string | null;
 }
