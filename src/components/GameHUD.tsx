@@ -43,6 +43,7 @@ interface GameHUDProps {
   onToggleCamera: () => void;
   onToggleWings: () => void;
   onToggleRobot: () => void;
+  onExtractZombie: () => void;
 }
 
 /** Smoothly interpolates vehicle health color from pure white (100%) -> orange (45%) -> crimson red (0%) */
@@ -118,6 +119,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onToggleCamera,
   onToggleWings,
   onToggleRobot,
+  onExtractZombie,
 }) => {
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const t = getText(hud.language);
@@ -532,14 +534,37 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             {hud.story.active && hud.story.objectiveText && !hud.story.dialogue && (
               <div
                 dir={hud.language === 'ar' ? 'rtl' : 'ltr'}
-                className="bg-slate-950/92 border border-cyan-400/70 px-3.5 py-1.5 rounded-lg shadow-lg"
+                className="pointer-events-auto bg-slate-950/92 border border-cyan-400/70 px-3.5 py-1.5 rounded-lg shadow-lg"
               >
                 <div className="text-[10px] md:text-xs font-black uppercase tracking-wider text-cyan-400">
-                  {t.storyHeaderTag}
+                  {hud.story.storyId === 'zombie_8095' ? t.story2HeaderTag : t.storyHeaderTag}
                 </div>
                 <div className="text-[11px] md:text-sm font-bold text-white mt-0.5 line-clamp-2">
                   {hud.story.objectiveText}
                 </div>
+
+                {hud.story.storyId === 'zombie_8095' && hud.story.stage === 'z_horde_combat' && (
+                  <div className="mt-2 pt-2 border-t border-slate-800 flex flex-wrap items-center justify-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-[11px] font-black text-rose-300 tabular-nums">
+                      {t.zombieKillsLabel}: {hud.story.zombieKills}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-black text-emerald-300 tabular-nums">
+                      {t.zombieLootLabel}: +${hud.story.zombieLootCash.toLocaleString()}
+                    </span>
+                    {hud.story.canExtract ? (
+                      <button
+                        onClick={onExtractZombie}
+                        className="px-3 py-1 rounded bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-[11px] font-black cursor-pointer shadow"
+                      >
+                        {t.zombieExtractBtn}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-300">
+                        {t.zombieExtractUnlockHint.replace('{n}', String(hud.story.zombieExtractThreshold))}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -707,14 +732,32 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           {hud.story.active && hud.story.objectiveText && !hud.story.dialogue && (
             <div
               dir={hud.language === 'ar' ? 'rtl' : 'ltr'}
-              className="bg-slate-950/92 border border-cyan-400/70 px-2.5 py-1 rounded-lg shadow-lg max-w-[92vw]"
+              className="pointer-events-auto bg-slate-950/92 border border-cyan-400/70 px-2.5 py-1 rounded-lg shadow-lg max-w-[92vw]"
             >
               <div className="text-[9px] font-black uppercase tracking-wider text-cyan-400">
-                {t.storyHeaderTag}
+                {hud.story.storyId === 'zombie_8095' ? t.story2HeaderTag : t.storyHeaderTag}
               </div>
               <div className="text-[10px] font-bold text-white mt-0.5 line-clamp-2">
                 {hud.story.objectiveText}
               </div>
+              {hud.story.storyId === 'zombie_8095' && hud.story.stage === 'z_horde_combat' && (
+                <div className="mt-1.5 pt-1 border-t border-slate-800 flex flex-wrap items-center justify-center gap-1.5">
+                  <span className="px-1.5 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-[10px] font-black text-rose-300 tabular-nums">
+                    {t.zombieKillsLabel}: {hud.story.zombieKills}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-[10px] font-black text-emerald-300 tabular-nums">
+                    +${hud.story.zombieLootCash.toLocaleString()}
+                  </span>
+                  {hud.story.canExtract && (
+                    <button
+                      onClick={onExtractZombie}
+                      className="px-2.5 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-black cursor-pointer"
+                    >
+                      {t.zombieExtractBtn}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -757,7 +800,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       </div>
 
       {/* BOTTOM PERIMETER ROW (Desktop / Non-Touch Only — hidden while Story Dialogue/Victory is open!) */}
-      {!touchEnabled && !hud.story.dialogue && !hud.story.justFinishedModal && (
+      {!touchEnabled &&
+        !hud.story.dialogue &&
+        !hud.story.justFinishedModal &&
+        !hud.story.zombiePhoneModalOpen &&
+        !hud.story.zombieExtractedModal && (
         <div className="flex items-end justify-between gap-2 md:gap-4">
           {/* Bottom-Left: Minimal Controls Reminder (desktop only) */}
           <div className="hidden lg:block text-[11px] font-medium text-slate-300 bg-slate-950/80 border border-slate-800 px-3 py-1.5 rounded-md">

@@ -278,6 +278,8 @@ export interface MultiplayerHudState {
   };
 }
 
+export type StoryId = 'bank_heist' | 'zombie_8095';
+
 export type StoryStage =
   | 'idle'
   | 'apartment_call'
@@ -289,7 +291,12 @@ export type StoryStage =
   | 'grab_cash'
   | 'exit_bank_escape'
   | 'escape_police'
-  | 'completed';
+  | 'completed'
+  | 'z_wake_phone'
+  | 'z_table_first_part'
+  | 'z_collect_gear'
+  | 'z_exit_house'
+  | 'z_horde_combat';
 
 export interface StoryDialogueLine {
   speaker: string;
@@ -300,12 +307,24 @@ export interface StoryDialogueLine {
 
 export interface StoryHudState {
   active: boolean;
+  storyId: StoryId | null;
   completed: boolean;
   stage: StoryStage;
   objectiveText: string | null;
   dialogue: StoryDialogueLine | null;
   justFinishedModal: boolean;
   rewardAmount: number;
+  zombieCooldownUntil: number;
+  zombiePhoneModalOpen: boolean;
+  zombiePhoneCalendarChecked: boolean;
+  partsCollected: number;
+  partsTotal: number;
+  zombieKills: number;
+  zombieLootCash: number;
+  canExtract: boolean;
+  zombieExtractThreshold: number;
+  zombieExtractedModal: boolean;
+  zombieLastRunLostCash: number;
 }
 
 export interface HudSnapshot {

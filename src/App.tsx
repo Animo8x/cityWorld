@@ -12,7 +12,12 @@ import {
   PhoneModal,
   WastedModal,
 } from './components/Modals';
-import { StoryDialogueBox, StoryVictoryModal } from './components/StoryOverlay';
+import {
+  StoryDialogueBox,
+  StoryPhone8095Modal,
+  StorySelectModal,
+  StoryVictoryModal,
+} from './components/StoryOverlay';
 import { TitleScreen } from './components/TitleScreen';
 import { WorldMapModal } from './components/WorldMapModal';
 
@@ -42,6 +47,7 @@ export default function App() {
   const engineRef = useRef<CityWorldEngine | null>(null);
   const [hud, setHud] = useState<HudSnapshot | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const [showStorySelect, setShowStorySelect] = useState(false);
 
   // Auto-enable touch controls on phones/tablets, toggleable anytime in HUD
   const [touchEnabled, setTouchEnabled] = useState<boolean>(() => {
@@ -87,7 +93,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v11.5.html';
+        a.download = 'CityWorld-v13.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -106,7 +112,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v11.5.html';
+        a.download = 'CityWorld-v13.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -119,7 +125,7 @@ export default function App() {
 
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = 'CityWorld-v11.5.html';
+    a.download = 'CityWorld-v13.html';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -168,20 +174,33 @@ export default function App() {
       )}
 
       {hud?.phase === 'title' && (
-        <TitleScreen
-          language={hud.language}
-          hasSavedGame={hud.hasSavedGame}
-          savedMoney={hud.money}
-          savedMissions={hud.completedMissionIds.length}
-          totalMissions={MISSION_REGISTRY.length}
-          storyCompleted={hud.story.completed}
-          onSetLanguage={(lang) => engineRef.current?.setLanguage(lang)}
-          onStart={() => engineRef.current?.startGame()}
-          onStartStory={() => engineRef.current?.startStoryMode()}
-          onNewGame={() => engineRef.current?.startNewSinglePlayerGame()}
-          onOpenMultiplayer={() => engineRef.current?.openMultiplayerLobby()}
-          onDownloadHtml={handleDownloadStandaloneHtml}
-        />
+        <>
+          <TitleScreen
+            language={hud.language}
+            hasSavedGame={hud.hasSavedGame}
+            savedMoney={hud.money}
+            savedMissions={hud.completedMissionIds.length}
+            totalMissions={MISSION_REGISTRY.length}
+            storyCompleted={hud.story.completed}
+            onSetLanguage={(lang) => engineRef.current?.setLanguage(lang)}
+            onStart={() => engineRef.current?.startGame()}
+            onStartStory={() => setShowStorySelect(true)}
+            onNewGame={() => engineRef.current?.startNewSinglePlayerGame()}
+            onOpenMultiplayer={() => engineRef.current?.openMultiplayerLobby()}
+            onDownloadHtml={handleDownloadStandaloneHtml}
+          />
+          <StorySelectModal
+            open={showStorySelect}
+            language={hud.language}
+            story1Completed={hud.story.completed}
+            zombieCooldownUntil={hud.story.zombieCooldownUntil}
+            onSelectStory={(storyId) => {
+              const started = engineRef.current?.startStoryMode(storyId);
+              if (started) setShowStorySelect(false);
+            }}
+            onClose={() => setShowStorySelect(false)}
+          />
+        </>
       )}
 
       {hud && hud.phase !== 'title' && (
@@ -202,13 +221,16 @@ export default function App() {
           onToggleCamera={() => engineRef.current?.toggleFirstPerson()}
           onToggleWings={() => engineRef.current?.toggleVehicleWings()}
           onToggleRobot={() => engineRef.current?.toggleRobotTransform()}
+          onExtractZombie={() => engineRef.current?.extractZombieStory()}
         />
       )}
 
       {hud?.phase === 'playing' &&
         touchEnabled &&
         !hud.story.dialogue &&
-        !hud.story.justFinishedModal && (
+        !hud.story.justFinishedModal &&
+        !hud.story.zombiePhoneModalOpen &&
+        !hud.story.zombieExtractedModal && (
         <MobileControls
           language={hud.language}
           buttonScale={buttonScale}
@@ -337,6 +359,8 @@ export default function App() {
         <WastedModal
           language={hud.language}
           isStoryActive={hud.story.active}
+          storyId={hud.story.storyId}
+          zombieLostCash={hud.story.zombieLastRunLostCash}
           failedMissionName={hud.wastedFailedMission}
           onRespawn={() => engineRef.current?.respawnAfterWasted()}
           onExitStory={() => engineRef.current?.exitStoryToMenu()}
@@ -345,6 +369,11 @@ export default function App() {
 
       {hud && (
         <>
+          <StoryPhone8095Modal
+            hud={hud}
+            onOpenCalendar={() => engineRef.current?.checkZombiePhoneCalendar()}
+            onContinueToTable={() => engineRef.current?.finishZombiePhoneCutscene()}
+          />
           <StoryDialogueBox
             hud={hud}
             onAdvanceDialogue={() => engineRef.current?.advanceStoryDialogue()}
@@ -353,6 +382,8 @@ export default function App() {
             hud={hud}
             onGoFreeRoam={() => engineRef.current?.finishStoryToFreeRoam()}
             onBackToMenu={() => engineRef.current?.finishStoryToMenu()}
+            onZombieGoFreeRoam={() => engineRef.current?.finishZombieRunToFreeRoam()}
+            onZombieBackToMenu={() => engineRef.current?.finishZombieRunToMenu()}
           />
         </>
       )}

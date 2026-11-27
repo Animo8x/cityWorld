@@ -623,7 +623,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     onClick={onDownloadHtml}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/60 text-cyan-200 text-xs font-black cursor-pointer"
                   >
-                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v11.5)
+                    <Download className="w-4 h-4 text-cyan-300" /> {t.downloadHtmlBtn} (v13)
                   </button>
                   <p className="text-[11px] text-slate-400">{t.downloadHtmlHint}</p>
                 </div>
@@ -812,6 +812,8 @@ export const InteriorShopModal: React.FC<InteriorShopModalProps> = ({ hud, onAct
 interface WastedModalProps {
   language: Language;
   isStoryActive: boolean;
+  storyId: string | null;
+  zombieLostCash: number;
   failedMissionName: string | null;
   onRespawn: () => void;
   onExitStory?: () => void;
@@ -820,20 +822,30 @@ interface WastedModalProps {
 export const WastedModal: React.FC<WastedModalProps> = ({
   language,
   isStoryActive,
+  storyId,
+  zombieLostCash,
   failedMissionName,
   onRespawn,
   onExitStory,
 }) => {
   const t = getText(language);
+  const isZombieStory = isStoryActive && storyId === 'zombie_8095';
+
   return (
     <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="fixed inset-0 z-30 bg-rose-950/85 flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-slate-950 border border-rose-500/60 rounded-xl p-8 text-center shadow-2xl">
         <h2 className="text-2xl md:text-3xl font-black tracking-wide text-rose-500 uppercase">
-          {isStoryActive ? t.wastedStoryTitle : t.wastedTitle}
+          {isZombieStory ? t.wastedZombieTitle : isStoryActive ? t.wastedStoryTitle : t.wastedTitle}
         </h2>
         <p className="text-sm text-slate-300 mt-2 leading-relaxed">
-          {isStoryActive ? t.wastedStoryDesc : t.wastedDesc}
+          {isZombieStory ? t.wastedZombieDesc : isStoryActive ? t.wastedStoryDesc : t.wastedDesc}
         </p>
+
+        {isZombieStory && zombieLostCash > 0 && (
+          <div className="mt-4 px-4 py-2.5 rounded-lg bg-rose-950/80 border border-rose-500/60 text-xs sm:text-sm font-black text-rose-300 tabular-nums">
+            -{`$${zombieLostCash.toLocaleString()}`} {t.zombieLootLabel}
+          </div>
+        )}
 
         {!isStoryActive && failedMissionName && (
           <div className="mt-4 px-4 py-2.5 rounded-lg bg-rose-950/80 border border-rose-500/60 text-xs sm:text-sm font-black text-rose-300">
@@ -842,21 +854,27 @@ export const WastedModal: React.FC<WastedModalProps> = ({
         )}
 
         <div className="mt-6 flex flex-col gap-2.5">
-          <button
-            onClick={onRespawn}
-            className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm uppercase cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            {isStoryActive ? t.restartStoryBtn : t.respawnHospital}
-          </button>
+          {!isZombieStory && (
+            <button
+              onClick={onRespawn}
+              className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm uppercase cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              {isStoryActive ? t.restartStoryBtn : t.respawnHospital}
+            </button>
+          )}
 
           {isStoryActive && onExitStory && (
             <button
               onClick={onExitStory}
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-xs sm:text-sm border border-slate-700 cursor-pointer"
+              className={`w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-extrabold text-xs sm:text-sm cursor-pointer ${
+                isZombieStory
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700'
+              }`}
             >
-              <LogOut className="w-4 h-4 text-rose-400" />
-              {t.storyExitToMenu}
+              <LogOut className={`w-4 h-4 ${isZombieStory ? 'text-slate-950' : 'text-rose-400'}`} />
+              {isZombieStory ? t.zombieReturnMenuBtn : t.storyExitToMenu}
             </button>
           )}
         </div>

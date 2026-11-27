@@ -43,6 +43,8 @@ export class PlayerController {
   public isSwimming = false;
   public isSprinting = false;
   public inInterior = false;
+  public interiorCenterX = 0;
+  public interiorCenterZ = 0;
   public interiorFloorY = 0;
   public interiorHalfW = 11;
   public interiorHalfD = 11;
@@ -409,10 +411,11 @@ export class PlayerController {
     let nextX = rawNextX;
     let nextZ = rawNextZ;
     if (this.inInterior) {
-      // Keep inside room bounds centered near current interior center
-      const roomCenterX = Math.round(this.x / 120) * 120;
+      // Keep strictly inside explicit interior room bounds
+      const roomCenterX = this.interiorCenterX;
+      const roomCenterZ = this.interiorCenterZ;
       nextX = THREE.MathUtils.clamp(nextX, roomCenterX - this.interiorHalfW, roomCenterX + this.interiorHalfW);
-      nextZ = THREE.MathUtils.clamp(nextZ, -this.interiorHalfD, this.interiorHalfD);
+      nextZ = THREE.MathUtils.clamp(nextZ, roomCenterZ - this.interiorHalfD, roomCenterZ + this.interiorHalfD);
     } else {
       const onIslandAlready = this.z > 620;
       const onAuroriaAlready = this.x >= 720;

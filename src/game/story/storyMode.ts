@@ -5,10 +5,23 @@ import {
   MapMarker,
   StoryDialogueLine,
   StoryHudState,
+  StoryId,
   StoryStage,
+  WeaponId,
 } from '../types';
 import { groundHeightAt } from '../world/worldLayout';
 import { WorldVehicle } from '../vehicles/vehiclePhysics';
+import {
+  loadZombieStoryCooldownUntil,
+  setZombieStoryCooldownOneHour,
+  STORY2_EXTERIOR_POS,
+  STORY2_HOUSE_CENTER,
+  STORY2_HOUSE_HALF_D,
+  STORY2_HOUSE_HALF_W,
+  ZOMBIE_EXTRACT_THRESHOLD,
+  ZOMBIE_KILL_CASH,
+  ZombieStoryHelper,
+} from './zombieStoryHelper';
 
 export const STORY_COMPLETED_STORAGE_KEY = 'cityworld_story_completed_v1';
 export const STORY_REWARD_AMOUNT = 10000;
@@ -81,6 +94,8 @@ export interface StoryCallbacks {
     interiorFloorY: number;
     halfW: number;
     halfD: number;
+    interiorCenterX?: number;
+    interiorCenterZ?: number;
   }) => void;
   equipStoryPistol: () => void;
   setNightTime: () => void;
@@ -88,6 +103,12 @@ export interface StoryCallbacks {
   clearWanted: () => void;
   onGuardFireAtPlayer: (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, hit: boolean) => void;
   awardStoryReward: (amount: number) => void;
+  grantZombieWeaponGear: (weapon: WeaponId, ammo: number, armor: number) => void;
+  resupplyZombieAmmo: () => void;
+  setZombieApocalypseAtmosphere: () => void;
+  damagePlayerFromZombie: (dmg: number) => void;
+  spawnZombieBloodImpact: (x: number, y: number, z: number) => void;
+  getWorldColliders: () => ColliderBox[];
   onShowBanner: (title: string, subtitle: string, kind: 'success' | 'fail' | 'info') => void;
   onHudChanged: () => void;
 }
@@ -174,9 +195,21 @@ export class StoryModeSystem {
   private disposables: Array<{ dispose: () => void }> = [];
 
   public active = false;
+  public storyId: StoryId | null = null;
   public completed: boolean;
   public stage: StoryStage = 'idle';
   public justFinishedModal = false;
+
+  // Story 2 (Year 8095 Zombie Survival) state
+  private zombieHelper: ZombieStoryHelper;
+  public zombieCooldownUntil: number;
+  public zombiePhoneModalOpen = false;
+  public zombiePhoneCalendarChecked = false;
+  public zombieKills = 0;
+  public zombieLootCash = 0;
+  public zombieExtractedModal = false;
+  public zombieLastRunLostCash = 0;
+  public zombieExtractedRewardPending = 0;
 
   // Story dialogue queue
   private dialogueQueue: BilingualLine[] = [];
@@ -209,6 +242,8 @@ export class StoryModeSystem {
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.completed = isStoryModeCompleted();
+    this.zombieCooldownUntil = loadZombieStoryCooldownUntil();
+    this.zombieHelper = new ZombieStoryHelper(scene);
 
     this.apartmentGroup = this.buildApartmentInterior();
     this.apartmentGroup.visible = false;
@@ -686,13 +721,17 @@ export class StoryModeSystem {
     return g;
   }
 
-  public startStory(cb: StoryCallbacks, lang: Language): boolean {
+  public startStory(cb: StoryCallbacks, lang: Language, storyId: StoryId = 'bank_heist'): boolean {
+    if (storyId === 'zombie_8095') {
+      return this.startZombieStory(cb, lang);
+    }
     if (this.completed) {
       return false;
     }
 
     this.abortAndHide(cb);
     this.active = true;
+    this.storyId = 'bank_heist';
     this.justFinishedModal = false;
     this.stage = 'apartment_call';
     this.guardHp = 70;
@@ -729,6 +768,8 @@ export class StoryModeSystem {
       interiorFloorY: STORY_APARTMENT_CENTER.y,
       halfW: STORY_APARTMENT_HALF_W,
       halfD: STORY_APARTMENT_HALF_D,
+      interiorCenterX: STORY_APARTMENT_CENTER.x,
+      interiorCenterZ: STORY_APARTMENT_CENTER.z,
     });
 
     cb.playPhoneRing();
@@ -788,10 +829,117 @@ export class StoryModeSystem {
     return true;
   }
 
+  private startZombieStory(cb: StoryCallbacks, lang: Language): boolean {
+    this.zombieCooldownUntil = loadZombieStoryCooldownUntil();
+    if (Date.now() < this.zombieCooldownUntil) {
+      return false;
+    }
+
+    this.abortAndHide(cb);
+    this.active = true;
+    this.storyId = 'zombie_8095';
+    this.justFinishedModal = false;
+    this.zombieExtractedModal = false;
+    this.zombieExtractedRewardPending = 0;
+    this.zombieLastRunLostCash = 0;
+    this.zombiePhoneModalOpen = false;
+    this.zombiePhoneCalendarChecked = false;
+    this.zombieKills = 0;
+    this.zombieLootCash = 0;
+    this.stage = 'z_wake_phone';
+
+    this.zombieHelper.resetForNewRun();
+    this.zombieHelper.houseGroup.visible = true;
+
+    cb.setZombieApocalypseAtmosphere();
+    cb.clearWanted();
+
+    // Wake up next to bed inside lone house
+    cb.teleportPlayer({
+      x: STORY2_HOUSE_CENTER.x + 2.8,
+      y: STORY2_HOUSE_CENTER.y,
+      z: STORY2_HOUSE_CENTER.z - 3.6,
+      heading: -Math.PI * 0.32,
+      inInterior: true,
+      interiorFloorY: STORY2_HOUSE_CENTER.y,
+      halfW: STORY2_HOUSE_HALF_W,
+      halfD: STORY2_HOUSE_HALF_D,
+      interiorCenterX: STORY2_HOUSE_CENTER.x,
+      interiorCenterZ: STORY2_HOUSE_CENTER.z,
+    });
+
+    cb.playPhoneRing();
+    cb.onShowBanner(
+      lang === 'ar' ? '🛏️ استيقظت وحدك في البيت...' : '🛏️ Woke Up Alone in Your House...',
+      lang === 'ar' ? 'تحقق من هاتفك وشاهد التاريخ' : 'Check your phone to see what happened',
+      'info'
+    );
+
+    this.openDialogue(
+      [
+        {
+          speakerEn: 'You',
+          speakerAr: 'أنت',
+          textEn:
+            'Ugh... my head... Why is the house completely silent and abandoned? Let me turn on my phone and check the internet...',
+          textAr:
+            'آه... رأسي... ليش البيت ساكت كذا وفاضي وما في أحد؟ خليني أشعل هاتفي وأشوف وش صار في العالم...',
+        },
+      ],
+      () => {
+        this.zombiePhoneModalOpen = true;
+        cb.onHudChanged();
+      }
+    );
+
+    cb.onHudChanged();
+    return true;
+  }
+
+  public checkZombieCalendar(cb: StoryCallbacks): void {
+    if (!this.active || this.storyId !== 'zombie_8095') return;
+    this.zombiePhoneCalendarChecked = true;
+    cb.playCue('step');
+    cb.onHudChanged();
+  }
+
+  public finishZombiePhoneCutscene(cb: StoryCallbacks, lang: Language): void {
+    if (!this.active || this.storyId !== 'zombie_8095' || !this.zombiePhoneCalendarChecked) return;
+    this.zombiePhoneModalOpen = false;
+    this.stage = 'z_table_first_part';
+    cb.playCue('step');
+
+    this.openDialogue(
+      [
+        {
+          speakerEn: 'You',
+          speakerAr: 'أنت',
+          textEn:
+            'Year 8095?! Everything on the internet evaporated! Wait... I see a weapon piece on the table. I need to grab it right now!',
+          textAr:
+            'سنة 8095؟!! كل شيء في الإنترنت متبخر بالكامل! لحظة... في قطعة سلاح على الطاولة، لازم أروح آخذها فوراً!',
+        },
+      ],
+      () => {
+        cb.onShowBanner(
+          lang === 'ar' ? '🔫 توجّه إلى الطاولة!' : '🔫 Head to the Table!',
+          lang === 'ar' ? 'خذ قطعة السلاح الأولى من الطاولة [E]' : 'Pick up the first weapon piece from the table [E]',
+          'info'
+        );
+        cb.onHudChanged();
+      }
+    );
+    cb.onHudChanged();
+  }
+
   public abortAndHide(cb?: Pick<StoryCallbacks, 'removeGetawayCar'>): void {
     this.active = false;
+    this.storyId = null;
     this.stage = 'idle';
     this.justFinishedModal = false;
+    this.zombieExtractedModal = false;
+    this.zombiePhoneModalOpen = false;
+    this.zombiePhoneCalendarChecked = false;
     this.dialogueQueue = [];
     this.dialogueIndex = 0;
     this.onDialogueFinished = null;
@@ -802,6 +950,7 @@ export class StoryModeSystem {
     this.friendNpcGroup.visible = false;
     this.alarmLight.intensity = 0;
     this.detachPassengerFromCar();
+    this.zombieHelper.hideAll();
 
     if (this.friendCar && cb) {
       cb.removeGetawayCar(this.friendCar);
@@ -899,20 +1048,59 @@ export class StoryModeSystem {
         return lang === 'ar'
           ? 'تم إنهاء مهمة القصة بنجاح! +$10,000'
           : 'Story Mission Complete! +$10,000';
+      case 'z_wake_phone':
+        return lang === 'ar'
+          ? 'تفقد هاتفك وتطبيق التقويم لمعرفة السنة'
+          : 'Check your phone & Calendar app';
+      case 'z_table_first_part':
+        return lang === 'ar'
+          ? 'توجّه إلى الطاولة وخذ قطعة السلاح الأولى [E]'
+          : 'Go to the table & pick up the first weapon piece [E]';
+      case 'z_collect_gear': {
+        const counts = this.zombieHelper.getPickupCount();
+        return lang === 'ar'
+          ? `اجمع كل قطع الأسلحة والرصاص في البيت (${counts.collected}/${counts.total})`
+          : `Collect all weapon parts & ammo in the house (${counts.collected}/${counts.total})`;
+      }
+      case 'z_exit_house':
+        return lang === 'ar'
+          ? 'اخرج من باب البيت لمواجهة الزومبي في الشارع [E]'
+          : 'Exit the house door to fight the Zombie horde [E]';
+      case 'z_horde_combat':
+        return this.zombieKills >= ZOMBIE_EXTRACT_THRESHOLD
+          ? lang === 'ar'
+            ? `قاتل الزومبي ($50 لكل قتلة) أو انسحب بنقودك ($${this.zombieLootCash.toLocaleString()})!`
+            : `Fight Zombies ($50/kill) or Extract now with $${this.zombieLootCash.toLocaleString()}!`
+          : lang === 'ar'
+            ? `قاتل الزومبي واجمع النقود (${this.zombieKills}/${ZOMBIE_EXTRACT_THRESHOLD} لفتح الانسحاب)`
+            : `Fight Zombies for $50/kill (${this.zombieKills}/${ZOMBIE_EXTRACT_THRESHOLD} kills to unlock Extract)`;
       default:
         return null;
     }
   }
 
   public getHudState(lang: Language): StoryHudState {
+    const counts = this.zombieHelper.getPickupCount();
     return {
       active: this.active,
+      storyId: this.storyId,
       completed: this.completed,
       stage: this.stage,
       objectiveText: this.getObjectiveText(lang),
       dialogue: this.getCurrentDialogue(lang),
       justFinishedModal: this.justFinishedModal,
       rewardAmount: STORY_REWARD_AMOUNT,
+      zombieCooldownUntil: this.zombieCooldownUntil,
+      zombiePhoneModalOpen: this.zombiePhoneModalOpen,
+      zombiePhoneCalendarChecked: this.zombiePhoneCalendarChecked,
+      partsCollected: counts.collected,
+      partsTotal: counts.total,
+      zombieKills: this.zombieKills,
+      zombieLootCash: this.zombieLootCash,
+      canExtract: this.storyId === 'zombie_8095' && this.stage === 'z_horde_combat' && this.zombieKills >= ZOMBIE_EXTRACT_THRESHOLD,
+      zombieExtractThreshold: ZOMBIE_EXTRACT_THRESHOLD,
+      zombieExtractedModal: this.zombieExtractedModal,
+      zombieLastRunLostCash: this.zombieLastRunLostCash,
     };
   }
 
@@ -926,6 +1114,12 @@ export class StoryModeSystem {
 
   public getGpsTarget(): { x: number; z: number } | null {
     if (!this.active) return null;
+    if (this.storyId === 'zombie_8095') {
+      if (this.stage === 'z_horde_combat' && this.zombieHelper.extractBeaconActive) {
+        return { x: this.zombieHelper.extractPos.x, z: this.zombieHelper.extractPos.z };
+      }
+      return null;
+    }
     if (this.stage === 'board_car' && this.friendCar) {
       return { x: this.friendCar.x, z: this.friendCar.z };
     }
@@ -946,28 +1140,72 @@ export class StoryModeSystem {
         x: target.x,
         z: target.z,
         label:
-          this.stage === 'board_car'
+          this.storyId === 'zombie_8095'
             ? lang === 'ar'
-              ? 'سيارة صديقك'
-              : "Friend's Car"
-            : lang === 'ar'
-              ? 'البنك (الهدف)'
-              : 'Bank Heist Target',
+              ? 'نقطة الانسحاب'
+              : 'Extraction Flare'
+            : this.stage === 'board_car'
+              ? lang === 'ar'
+                ? 'سيارة صديقك'
+                : "Friend's Car"
+              : lang === 'ar'
+                ? 'البنك (الهدف)'
+                : 'Bank Heist Target',
       },
     ];
   }
 
   public getCombatTargets(): Array<{ id: string; x: number; y: number; z: number; radius: number }> {
-    if (!this.active || this.stage !== 'shoot_guard' || !this.guardAlive) return [];
-    return [
-      {
-        id: 'story_guard',
-        x: STORY_GUARD_WORLD_POS.x,
-        y: STORY_GUARD_WORLD_POS.y,
-        z: STORY_GUARD_WORLD_POS.z,
-        radius: 1.45,
-      },
-    ];
+    if (!this.active) return [];
+    if (this.storyId === 'zombie_8095' && this.stage === 'z_horde_combat') {
+      return this.zombieHelper.zombies
+        .filter((z) => !z.dead)
+        .map((z) => ({ id: z.id, x: z.x, y: z.y, z: z.z, radius: z.radius }));
+    }
+    if (this.stage === 'shoot_guard' && this.guardAlive) {
+      return [
+        {
+          id: 'story_guard',
+          x: STORY_GUARD_WORLD_POS.x,
+          y: STORY_GUARD_WORLD_POS.y,
+          z: STORY_GUARD_WORLD_POS.z,
+          radius: 1.45,
+        },
+      ];
+    }
+    return [];
+  }
+
+  public damageZombie(targetId: string, dmg: number, cb: StoryCallbacks, lang: Language): boolean {
+    if (!this.active || this.storyId !== 'zombie_8095' || this.stage !== 'z_horde_combat') {
+      return false;
+    }
+    const res = this.zombieHelper.damageZombie(targetId, dmg);
+    if (!res.hit) return false;
+    cb.spawnZombieBloodImpact(res.x, res.y + 1.1, res.z);
+    if (res.killed) {
+      this.zombieKills += 1;
+      this.zombieLootCash += ZOMBIE_KILL_CASH;
+      cb.playCashPickup();
+
+      if (this.zombieKills % 5 === 0) {
+        cb.resupplyZombieAmmo();
+      }
+
+      if (this.zombieKills === ZOMBIE_EXTRACT_THRESHOLD) {
+        this.zombieHelper.activateExtractBeacon(res.x, res.z, cb.getWorldColliders());
+        cb.playCue('step');
+        cb.onShowBanner(
+          lang === 'ar' ? '🟢 تم فتح الانسحاب!' : '🟢 Extraction Unlocked!',
+          lang === 'ar'
+            ? 'يمكنك الاستمرار بالقتال أو الانسحاب بأموالك الآن!'
+            : 'Keep fighting for more cash or Extract anytime!',
+          'success'
+        );
+      }
+      cb.onHudChanged();
+    }
+    return true;
   }
 
   public damageGuard(dmg: number, cb: StoryCallbacks, lang: Language): boolean {
@@ -1087,6 +1325,40 @@ export class StoryModeSystem {
       }
     }
 
+    if (inInterior && this.storyId === 'zombie_8095' && (this.stage === 'z_table_first_part' || this.stage === 'z_collect_gear')) {
+      const p = this.zombieHelper.getNearestUncollectedPickup(px, pz, 2.8);
+      if (p) {
+        return {
+          ...empty,
+          prompt: this.zombieHelper.getPromptLabel(p, lang),
+        };
+      }
+    }
+
+    if (inInterior && this.storyId === 'zombie_8095' && this.stage === 'z_exit_house') {
+      const dz = pz - (STORY2_HOUSE_CENTER.z + STORY2_HOUSE_HALF_D - 1.25);
+      if (dz > -2.5) {
+        return {
+          ...empty,
+          prompt: lang === 'ar' ? '[E] الخروج من البيت ومواجهة الزومبي' : '[E] Exit House to Fight Zombies',
+          nearApartmentExit: true,
+        };
+      }
+    }
+
+    if (!inInterior && this.storyId === 'zombie_8095' && this.stage === 'z_horde_combat' && this.zombieKills >= ZOMBIE_EXTRACT_THRESHOLD && this.zombieHelper.extractBeaconActive) {
+      const dExt = Math.hypot(px - this.zombieHelper.extractPos.x, pz - this.zombieHelper.extractPos.z);
+      if (dExt < 3.8) {
+        return {
+          ...empty,
+          prompt:
+            lang === 'ar'
+              ? `[E] انسحاب بأموالك (+$${this.zombieLootCash.toLocaleString()})`
+              : `[E] Extract with Cash (+$${this.zombieLootCash.toLocaleString()})`,
+        };
+      }
+    }
+
     return empty;
   }
 
@@ -1099,8 +1371,33 @@ export class StoryModeSystem {
     lang: Language
   ): boolean {
     if (!this.active) return false;
+    if (this.zombiePhoneModalOpen) return false;
     if (this.isDialogueOpen()) {
       return this.advanceDialogue(cb);
+    }
+
+    if (inInterior && this.storyId === 'zombie_8095' && (this.stage === 'z_table_first_part' || this.stage === 'z_collect_gear')) {
+      const p = this.zombieHelper.getNearestUncollectedPickup(px, pz, 2.8);
+      if (p) {
+        this.collectZombiePickup(p.id, cb, lang);
+        return true;
+      }
+    }
+
+    if (inInterior && this.storyId === 'zombie_8095' && this.stage === 'z_exit_house') {
+      const dz = pz - (STORY2_HOUSE_CENTER.z + STORY2_HOUSE_HALF_D - 1.25);
+      if (dz > -2.5) {
+        this.exitZombieHouseAction(cb, lang);
+        return true;
+      }
+    }
+
+    if (!inInterior && this.storyId === 'zombie_8095' && this.stage === 'z_horde_combat' && this.zombieKills >= ZOMBIE_EXTRACT_THRESHOLD && this.zombieHelper.extractBeaconActive) {
+      const dExt = Math.hypot(px - this.zombieHelper.extractPos.x, pz - this.zombieHelper.extractPos.z);
+      if (dExt < 3.8) {
+        this.extractZombieRun(cb, lang);
+        return true;
+      }
     }
 
     const ctx = this.getInteractionContext(px, pz, inInterior, inVehicle, lang);
@@ -1126,6 +1423,125 @@ export class StoryModeSystem {
     }
 
     return false;
+  }
+
+  private collectZombiePickup(pickupId: string, cb: StoryCallbacks, lang: Language): void {
+    const p = this.zombieHelper.pickups.find((item) => item.id === pickupId && !item.collected);
+    if (!p) return;
+    p.collected = true;
+    p.group.visible = false;
+    cb.playCashPickup();
+    cb.grantZombieWeaponGear(p.weaponGrant, p.ammoGrant, p.armorGrant);
+
+    const counts = this.zombieHelper.getPickupCount();
+    if (this.stage === 'z_table_first_part' && p.isFirstTablePart) {
+      this.stage = 'z_collect_gear';
+      this.zombieHelper.revealAllRemainingPickups();
+      this.openDialogue(
+        [
+          {
+            speakerEn: 'You',
+            speakerAr: 'أنت',
+            textEn:
+              `Picked up the first weapon piece! There are ${counts.total - counts.collected} more weapon & ammo parts scattered around the house — grab everything before going outside!`,
+            textAr:
+              `أخذت أول قطعة سلاح! باقي ${counts.total - counts.collected} قطع أسلحة وذخيرة داخل البيت — لازم أجمعها كلها قبل ما أطلع برا!`,
+          },
+        ],
+        () => cb.onHudChanged()
+      );
+      cb.onShowBanner(
+        lang === 'ar' ? `🔧 قطعة ${counts.collected}/${counts.total}` : `🔧 Part ${counts.collected}/${counts.total}`,
+        lang === 'ar' ? 'اجمع باقي الأسلحة والرصاص في البيت!' : 'Gather remaining weapons & ammo inside!',
+        'info'
+      );
+      cb.onHudChanged();
+      return;
+    }
+
+    if (counts.collected >= counts.total) {
+      this.stage = 'z_exit_house';
+      this.zombieHelper.exitDoorRing.visible = true;
+      cb.playCue('success');
+      this.openDialogue(
+        [
+          {
+            speakerEn: 'You',
+            speakerAr: 'أنت',
+            textEn:
+              'Every weapon piece and ammo crate is assembled! Time to step outside into 8095, fight the zombie hordes ($50 per kill), and extract alive with the cash!',
+            textAr:
+              'جمعت كل قطع الأسلحة والرصاص بالكامل! حان الوقت أطلع برا في عام 8095 — كل زومبي يعطي $50، ويمكنني الانسحاب وأخذ الفلوس أو أموت وأخسر كل شيء!',
+          },
+        ],
+        () => cb.onHudChanged()
+      );
+      cb.onShowBanner(
+        lang === 'ar' ? '✅ اكتملت الأسلحة والذخيرة!' : '✅ All Weapons & Ammo Ready!',
+        lang === 'ar' ? 'اخرج من باب البيت الآن [E]' : 'Exit the house door now [E]',
+        'success'
+      );
+    } else {
+      cb.onShowBanner(
+        lang === 'ar' ? `🔫 ${p.labelAr} (${counts.collected}/${counts.total})` : `🔫 ${p.labelEn} (${counts.collected}/${counts.total})`,
+        lang === 'ar' ? 'تابع البحث عن باقي القطع والرصاص في البيت' : 'Keep collecting remaining parts inside the house',
+        'info'
+      );
+    }
+    cb.onHudChanged();
+  }
+
+  private exitZombieHouseAction(cb: StoryCallbacks, lang: Language): void {
+    this.zombieHelper.houseGroup.visible = false;
+    this.zombieHelper.hordeGroup.visible = true;
+    cb.playDoorLatch();
+    cb.setZombieApocalypseAtmosphere();
+    cb.clearWanted();
+
+    cb.teleportPlayer({
+      x: STORY2_EXTERIOR_POS.x,
+      y: groundHeightAt(STORY2_EXTERIOR_POS.x, STORY2_EXTERIOR_POS.z),
+      z: STORY2_EXTERIOR_POS.z + 1.4,
+      heading: 0,
+      inInterior: false,
+      interiorFloorY: 0,
+      halfW: 11,
+      halfD: 11,
+    });
+
+    this.stage = 'z_horde_combat';
+    cb.playCue('start');
+    cb.onShowBanner(
+      lang === 'ar' ? '🧟 غزو الزومبي — عام 8095!' : '🧟 Year 8095 — Zombie Horde!',
+      lang === 'ar'
+        ? 'كل زومبي = +$50 · اقتل الكثير لتفتح الانسحاب! إذا متّ ستخسر كل شيء!'
+        : '$50 per zombie kill · Kill 10+ to unlock Extract! Die and lose everything!',
+      'fail'
+    );
+    cb.onHudChanged();
+  }
+
+  public extractZombieRun(cb: StoryCallbacks, lang: Language): boolean {
+    if (!this.active || this.storyId !== 'zombie_8095' || this.stage !== 'z_horde_combat') {
+      return false;
+    }
+    if (this.zombieKills < ZOMBIE_EXTRACT_THRESHOLD) return false;
+    this.zombieExtractedRewardPending = this.zombieLootCash;
+    this.zombieCooldownUntil = setZombieStoryCooldownOneHour();
+    this.zombieHelper.hideAll();
+    this.zombieExtractedModal = true;
+    cb.playCue('success');
+    cb.onShowBanner(
+      lang === 'ar'
+        ? `🚁 تم الانسحاب بنجاح! +$${this.zombieLootCash.toLocaleString()}`
+        : `🚁 Extracted Safely! +$${this.zombieLootCash.toLocaleString()}`,
+      lang === 'ar'
+        ? 'تم حفظ أموالك — يمكنك العودة بعد ساعة واحدة'
+        : 'Cash secured! Cooldown active for 1 hour.',
+      'success'
+    );
+    cb.onHudChanged();
+    return true;
   }
 
   private exitApartmentAction(cb: StoryCallbacks, lang: Language): void {
@@ -1214,6 +1630,8 @@ export class StoryModeSystem {
       interiorFloorY: STORY_BANK_CENTER.y,
       halfW: STORY_BANK_HALF_W,
       halfD: STORY_BANK_HALF_D,
+      interiorCenterX: STORY_BANK_CENTER.x,
+      interiorCenterZ: STORY_BANK_CENTER.z,
     });
 
     this.stage = 'shoot_guard';
@@ -1329,6 +1747,33 @@ export class StoryModeSystem {
     lang: Language
   ): void {
     if (!this.active) return;
+
+    if (this.storyId === 'zombie_8095') {
+      if (this.zombiePhoneModalOpen || this.zombieExtractedModal) return;
+
+      if (inInterior) {
+        this.zombieHelper.updateHouseAnimations(dt);
+        if (!this.isDialogueOpen() && (this.stage === 'z_table_first_part' || this.stage === 'z_collect_gear')) {
+          const walkPickup = this.zombieHelper.getNearestUncollectedPickup(px, pz, 1.35);
+          if (walkPickup) {
+            this.collectZombiePickup(walkPickup.id, cb, lang);
+            return;
+          }
+        }
+        if (this.stage === 'z_exit_house' && !this.isDialogueOpen()) {
+          if (pz > STORY2_HOUSE_CENTER.z + STORY2_HOUSE_HALF_D - 1.25) {
+            this.exitZombieHouseAction(cb, lang);
+            return;
+          }
+        }
+      } else if (this.stage === 'z_horde_combat') {
+        cb.clearWanted();
+        this.zombieHelper.updateHorde(dt, px, pz, this.zombieKills, cb.getWorldColliders(), (dmg) => {
+          cb.damagePlayerFromZombie(dmg);
+        });
+      }
+      return;
+    }
 
     // 1. Friend driving getaway car up outside the apartment
     if (this.carArriving && this.friendCar) {
@@ -1479,6 +1924,25 @@ export class StoryModeSystem {
     this.onDialogueFinished = null;
     this.alarmLight.intensity = 0;
     cb.playCue('fail');
+
+    if (this.storyId === 'zombie_8095') {
+      this.zombiePhoneModalOpen = false;
+      this.zombieExtractedModal = false;
+      this.zombieLastRunLostCash = this.zombieLootCash;
+      this.zombieLootCash = 0;
+      this.zombieExtractedRewardPending = 0;
+      this.zombieCooldownUntil = setZombieStoryCooldownOneHour();
+      cb.onShowBanner(
+        lang === 'ar' ? '💀 متّ وسط الزومبي وخسرت كل شيء!' : '💀 Killed by Zombies — Loot Lost!',
+        lang === 'ar'
+          ? 'خسرت كل الأموال التي جمعتها — انتظر ساعة واحدة لإعادة الدخول'
+          : 'You lost all loot collected — 1 hour cooldown started',
+        'fail'
+      );
+      cb.onHudChanged();
+      return;
+    }
+
     cb.onShowBanner(
       lang === 'ar' ? 'خسرت في طور القصة!' : 'Story Mode Failed!',
       lang === 'ar' ? 'لقد متّ — سيتم إعادة القصة من البداية' : 'You died — Story Mode will restart from the beginning',
@@ -1489,7 +1953,10 @@ export class StoryModeSystem {
 
   public handlePlayerWastedInStory(cb: StoryCallbacks, lang: Language): boolean {
     if (!this.active) return false;
-    const restarted = this.startStory(cb, lang);
+    if (this.storyId === 'zombie_8095') {
+      return false;
+    }
+    const restarted = this.startStory(cb, lang, 'bank_heist');
     if (restarted) {
       cb.onShowBanner(
         lang === 'ar' ? 'خسرت المهمة — أُعيدت القصة من البداية' : 'Story Lost — Restarted from Beginning',
@@ -1505,6 +1972,7 @@ export class StoryModeSystem {
 
   public dispose(): void {
     this.detachPassengerFromCar();
+    this.zombieHelper.dispose();
     this.scene.remove(this.apartmentGroup, this.bankGroup, this.exteriorBankGroup, this.friendNpcGroup);
     this.disposables.forEach((d) => d.dispose());
   }

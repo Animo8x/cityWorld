@@ -45,6 +45,39 @@ export class ThirdPersonCameraController {
     camera.lookAt(0, 18, 0);
   }
 
+  public snapTo(
+    x: number,
+    y: number,
+    z: number,
+    heading: number,
+    inInterior: boolean,
+    interiorBounds?: { centerX: number; centerZ: number; halfW: number; halfD: number }
+  ): void {
+    this.yaw = heading + Math.PI;
+    this.pitch = this.firstPerson ? 0.02 : 0.24;
+    const lookY = y + 1.55;
+    this.currentTarget.set(x, lookY, z);
+    const dist = inInterior ? 4.2 : this.distance;
+    const cosP = Math.cos(this.pitch);
+    const sinP = Math.sin(this.pitch);
+    let camX = x + Math.sin(this.yaw) * cosP * dist;
+    const camY = inInterior ? Math.min(lookY + sinP * dist, y + 4.4) : lookY + sinP * dist;
+    let camZ = z + Math.cos(this.yaw) * cosP * dist;
+    if (inInterior && interiorBounds) {
+      camX = THREE.MathUtils.clamp(
+        camX,
+        interiorBounds.centerX - interiorBounds.halfW,
+        interiorBounds.centerX + interiorBounds.halfW
+      );
+      camZ = THREE.MathUtils.clamp(
+        camZ,
+        interiorBounds.centerZ - interiorBounds.halfD,
+        interiorBounds.centerZ + interiorBounds.halfD
+      );
+    }
+    this.currentPos.set(camX, camY, camZ);
+  }
+
   public updateFollow(
     camera: THREE.PerspectiveCamera,
     dt: number,
@@ -56,7 +89,8 @@ export class ThirdPersonCameraController {
     speedRatio: number,
     autoAlign: boolean,
     inInterior: boolean,
-    vehicleType: 'none' | 'car' | 'bike' | 'airplane' | 'robot' = 'none'
+    vehicleType: 'none' | 'car' | 'bike' | 'airplane' | 'robot' = 'none',
+    interiorBounds?: { centerX: number; centerZ: number; halfW: number; halfD: number }
   ): void {
     if (this.firstPerson) {
       if (Math.abs(camera.near - 0.08) > 0.005) {
@@ -166,9 +200,9 @@ export class ThirdPersonCameraController {
 
     const cosP = Math.cos(this.pitch);
     const sinP = Math.sin(this.pitch);
-    const desiredX = this.currentTarget.x + Math.sin(this.yaw) * cosP * desiredDist;
+    let desiredX = this.currentTarget.x + Math.sin(this.yaw) * cosP * desiredDist;
     let desiredY = this.currentTarget.y + sinP * desiredDist;
-    const desiredZ = this.currentTarget.z + Math.cos(this.yaw) * cosP * desiredDist;
+    let desiredZ = this.currentTarget.z + Math.cos(this.yaw) * cosP * desiredDist;
 
     if (!inInterior) {
       const groundY = groundHeightAt(desiredX, desiredZ);
@@ -177,6 +211,18 @@ export class ThirdPersonCameraController {
       if (desiredY < minY) desiredY = minY;
     } else {
       desiredY = Math.min(desiredY, targetY + 4.4);
+      if (interiorBounds) {
+        desiredX = THREE.MathUtils.clamp(
+          desiredX,
+          interiorBounds.centerX - interiorBounds.halfW,
+          interiorBounds.centerX + interiorBounds.halfW
+        );
+        desiredZ = THREE.MathUtils.clamp(
+          desiredZ,
+          interiorBounds.centerZ - interiorBounds.halfD,
+          interiorBounds.centerZ + interiorBounds.halfD
+        );
+      }
     }
 
     this.currentPos.x = THREE.MathUtils.damp(this.currentPos.x, desiredX, 14, dt);

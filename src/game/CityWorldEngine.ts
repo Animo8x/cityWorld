@@ -35,6 +35,7 @@ import {
   PlayerSkinId,
   QualityMode,
   ServerRegionId,
+  StoryId,
   VehicleClassId,
   WeaponId,
 } from './types';
@@ -238,7 +239,7 @@ export class CityWorldEngine {
     this.vehicleMgr.spawnInitialFleet();
     this.explosions = new ExplosionSystem(this.scene);
 
-    this.traffic = new TrafficSystem(this.scene, 36);
+    this.traffic = new TrafficSystem(this.scene, 44);
     this.pedestrians = new PedestrianSystem(this.scene, 42);
     this.wanted = new WantedSystem(this.scene);
     this.weapons = new WeaponSystem(this.scene);
@@ -463,6 +464,8 @@ export class CityWorldEngine {
       if (
         moved < 6 &&
         !this.story.isDialogueOpen() &&
+        !this.story.zombiePhoneModalOpen &&
+        !this.story.zombieExtractedModal &&
         (!this.player.inInterior || allowInteriorFire) &&
         (!this.activeVehicle || canRobotFire)
       ) {
@@ -762,7 +765,7 @@ export class CityWorldEngine {
         this.streamRadius = 560;
         this.trafficCullDist = 250;
         this.pedCullDist = 175;
-        trafficCount = 22;
+        trafficCount = 26;
         pedCount = 20;
         break;
       case 'medium':
@@ -774,7 +777,7 @@ export class CityWorldEngine {
         this.streamRadius = 640;
         this.trafficCullDist = 300;
         this.pedCullDist = 200;
-        trafficCount = 28;
+        trafficCount = 34;
         pedCount = 28;
         break;
       case 'high':
@@ -786,7 +789,7 @@ export class CityWorldEngine {
         this.streamRadius = 760;
         this.trafficCullDist = 360;
         this.pedCullDist = 250;
-        trafficCount = 34;
+        trafficCount = 40;
         pedCount = 36;
         break;
       case 'ultra':
@@ -798,7 +801,7 @@ export class CityWorldEngine {
         this.streamRadius = 920;
         this.trafficCullDist = 420;
         this.pedCullDist = 290;
-        trafficCount = 36;
+        trafficCount = 44;
         pedCount = 42;
         break;
     }
@@ -1046,6 +1049,8 @@ export class CityWorldEngine {
         this.interiors.setActiveInterior(null);
         this.player.setRidingPose('none', 0, 0);
         this.player.inInterior = opts.inInterior;
+        this.player.interiorCenterX = opts.inInterior ? (opts.interiorCenterX ?? opts.x) : 0;
+        this.player.interiorCenterZ = opts.inInterior ? (opts.interiorCenterZ ?? opts.z) : 0;
         this.player.interiorFloorY = opts.interiorFloorY;
         this.player.interiorHalfW = opts.halfW;
         this.player.interiorHalfD = opts.halfD;
@@ -1059,6 +1064,21 @@ export class CityWorldEngine {
         this.player.root.position.set(opts.x, opts.y, opts.z);
         this.player.root.rotation.y = opts.heading;
         this.player.root.visible = !this.cameraCtrl.firstPerson;
+        this.cameraCtrl.snapTo(
+          opts.x,
+          opts.y,
+          opts.z,
+          opts.heading,
+          opts.inInterior,
+          opts.inInterior
+            ? {
+                centerX: this.player.interiorCenterX,
+                centerZ: this.player.interiorCenterZ,
+                halfW: opts.halfW + 0.25,
+                halfD: opts.halfD + 0.25,
+              }
+            : undefined
+        );
       },
       equipStoryPistol: () => {
         this.weapons.ownedWeapons.add('fists');
@@ -1087,6 +1107,35 @@ export class CityWorldEngine {
           this.pushHud();
         }
       },
+      grantZombieWeaponGear: (weapon, ammo, armor) => {
+        this.weapons.ownedWeapons.add('fists');
+        this.weapons.ownedWeapons.add(weapon);
+        this.weapons.ammoByWeapon[weapon] = (this.weapons.ammoByWeapon[weapon] || 0) + ammo;
+        this.weapons.currentWeapon = weapon;
+        if (armor > 0) {
+          this.player.armor = Math.min(this.player.maxArmor, Math.max(this.player.armor, armor));
+        }
+        this.pushHud();
+      },
+      resupplyZombieAmmo: () => {
+        if (this.weapons.ownedWeapons.has('pistol')) this.weapons.ammoByWeapon.pistol += 24;
+        if (this.weapons.ownedWeapons.has('smg')) this.weapons.ammoByWeapon.smg += 45;
+        if (this.weapons.ownedWeapons.has('shotgun')) this.weapons.ammoByWeapon.shotgun += 10;
+        if (this.weapons.ownedWeapons.has('rifle')) this.weapons.ammoByWeapon.rifle += 40;
+      },
+      setZombieApocalypseAtmosphere: () => {
+        this.weatherTime.timeHours = 1.4;
+        this.weatherTime.weather = 'fog';
+      },
+      damagePlayerFromZombie: (dmg) => {
+        this.sound.playImpact(0.55);
+        this.cameraCtrl.addShake(0.35);
+        this.player.applyDamage(dmg);
+      },
+      spawnZombieBloodImpact: (x, y, z) => {
+        this.explosions.triggerDustBurst(x, y, z);
+      },
+      getWorldColliders: () => this.world.colliders,
       onShowBanner: (title, subtitle, kind) => {
         this.missionBanner = { title, subtitle, kind };
         this.bannerTimer = 4.2;
@@ -1095,7 +1144,7 @@ export class CityWorldEngine {
     };
   }
 
-  private restoreFromStoryMode(awardMoney: boolean): void {
+  private restoreFromStoryMode(awardMoney: boolean, zombieRewardCash = 0): void {
     const cb = this.getStoryCallbacks();
     this.story.abortAndHide(cb);
     const colIdx = this.world.colliders.indexOf(STORY_BANK_COLLIDER);
@@ -1112,15 +1161,19 @@ export class CityWorldEngine {
     this.wanted.clearWanted();
     this.customWaypoint = null;
 
+    const bonusAmount = awardMoney ? (zombieRewardCash > 0 ? zombieRewardCash : STORY_REWARD_AMOUNT) : 0;
+
     if (this.freeRoamBackup) {
       const b = this.freeRoamBackup;
-      this.money = b.money + (awardMoney ? STORY_REWARD_AMOUNT : 0);
+      this.money = b.money + bonusAmount;
       this.devCodeActivated = b.devCodeActivated;
       this.ownedVehicles = new Set<VehicleClassId>(b.ownedVehicles);
       this.ownedSkins = new Set<PlayerSkinId>(b.ownedSkins);
       this.ownedHouses = new Set<string>(b.ownedHouses);
       this.missions.completedIds = new Set<string>(b.completedMissionIds);
       this.player.inInterior = false;
+      this.player.interiorCenterX = 0;
+      this.player.interiorCenterZ = 0;
       this.player.interiorFloorY = 0;
       this.player.interiorHalfW = 11;
       this.player.interiorHalfD = 11;
@@ -1136,6 +1189,7 @@ export class CityWorldEngine {
       this.player.stamina = this.player.maxStamina;
       this.player.root.position.set(this.player.x, this.player.y, this.player.z);
       this.player.root.rotation.y = this.player.heading;
+      this.cameraCtrl.snapTo(this.player.x, this.player.y, this.player.z, this.player.heading, false);
       this.player.applySkin(b.player.activeSkin);
       this.fpRig.syncSkin(b.player.activeSkin);
       this.weapons.ownedWeapons = new Set<WeaponId>(b.weapons.ownedWeapons);
@@ -1145,19 +1199,20 @@ export class CityWorldEngine {
       this.weatherTime.weather = b.environment.weather;
       this.freeRoamBackup = null;
     } else if (awardMoney && !this.storyRewardAwarded) {
-      this.money += STORY_REWARD_AMOUNT;
+      this.money += bonusAmount;
     }
     this.storyRewardAwarded = false;
     this.world.syncOwnedHouseSigns(this.ownedHouses);
+    this.setQualityMode(this.qualityMode);
 
     if (awardMoney) {
       this.saveSinglePlayerProgress(false);
     }
   }
 
-  public startStoryMode(): boolean {
+  public startStoryMode(storyId: StoryId = 'bank_heist'): boolean {
     this.sound.init();
-    if (this.story.completed) {
+    if (storyId === 'bank_heist' && this.story.completed) {
       this.missionBanner = {
         title: this.language === 'ar' ? 'القصة مكتملة بالفعل' : 'Story Already Completed',
         subtitle:
@@ -1169,6 +1224,24 @@ export class CityWorldEngine {
       this.bannerTimer = 3.5;
       this.pushHud();
       return false;
+    }
+
+    if (storyId === 'zombie_8095') {
+      const remMs = this.story.zombieCooldownUntil - Date.now();
+      if (remMs > 0) {
+        const mins = Math.ceil(remMs / 60000);
+        this.missionBanner = {
+          title: this.language === 'ar' ? 'وضع الزومبي مقفل مؤقتاً' : 'Zombie Story on Cooldown',
+          subtitle:
+            this.language === 'ar'
+              ? `يرجى الانتظار ${mins} دقيقة قبل إعادة الدخول لعام 8095.`
+              : `Please wait ${mins} min before re-entering Year 8095.`,
+          kind: 'info',
+        };
+        this.bannerTimer = 3.8;
+        this.pushHud();
+        return false;
+      }
     }
 
     if (this.multiplayer.isActive()) {
@@ -1191,8 +1264,15 @@ export class CityWorldEngine {
     this.wanted.clearWanted();
     this.customWaypoint = null;
 
-    if (!this.world.colliders.includes(STORY_BANK_COLLIDER)) {
-      this.world.colliders.push(STORY_BANK_COLLIDER);
+    if (storyId === 'bank_heist') {
+      if (!this.world.colliders.includes(STORY_BANK_COLLIDER)) {
+        this.world.colliders.push(STORY_BANK_COLLIDER);
+      }
+      this.setQualityMode(this.qualityMode);
+    } else {
+      // Desolate 8095 world: remove ordinary traffic & pedestrians
+      this.traffic.setActiveCount(0);
+      this.pedestrians.setActiveCount(0);
     }
 
     // Keep player's existing money balance visible throughout Story Mode
@@ -1202,25 +1282,26 @@ export class CityWorldEngine {
     this.world.syncOwnedHouseSigns(this.ownedHouses);
     this.missions.completedIds.clear();
     this.player.health = this.player.maxHealth;
-    this.player.armor = 25;
+    this.player.armor = storyId === 'zombie_8095' ? 0 : 25;
     this.player.stamina = this.player.maxStamina;
     this.player.isSwimming = false;
-    this.weapons.ownedWeapons = new Set<WeaponId>(['fists', 'pistol']);
+    this.weapons.ownedWeapons =
+      storyId === 'zombie_8095' ? new Set<WeaponId>(['fists']) : new Set<WeaponId>(['fists', 'pistol']);
     this.weapons.ammoByWeapon = {
       fists: 999,
-      pistol: 90,
+      pistol: storyId === 'zombie_8095' ? 0 : 90,
       smg: 0,
       shotgun: 0,
       rifle: 0,
       rpg: 0,
     };
-    this.weapons.currentWeapon = 'pistol';
+    this.weapons.currentWeapon = storyId === 'zombie_8095' ? 'fists' : 'pistol';
 
     this.held.clear();
     this.firingActive = false;
     this.phase = 'playing';
 
-    return this.story.startStory(this.getStoryCallbacks(), this.language);
+    return this.story.startStory(this.getStoryCallbacks(), this.language, storyId);
   }
 
   private restartStoryFromBeginning(): void {
@@ -1292,6 +1373,44 @@ export class CityWorldEngine {
       kind: 'success',
     };
     this.bannerTimer = 4.5;
+    this.pushHud();
+  }
+
+  public checkZombiePhoneCalendar(): void {
+    this.sound.init();
+    this.story.checkZombieCalendar(this.getStoryCallbacks());
+  }
+
+  public finishZombiePhoneCutscene(): void {
+    this.sound.init();
+    this.story.finishZombiePhoneCutscene(this.getStoryCallbacks(), this.language);
+  }
+
+  public extractZombieStory(): void {
+    this.sound.init();
+    this.story.extractZombieRun(this.getStoryCallbacks(), this.language);
+  }
+
+  public finishZombieRunToFreeRoam(): void {
+    const reward = this.story.zombieExtractedRewardPending;
+    this.restoreFromStoryMode(reward > 0, reward);
+    this.phase = 'playing';
+    this.missionBanner = {
+      title: this.language === 'ar' ? `+$${reward.toLocaleString()} غنائم الزومبي!` : `+$${reward.toLocaleString()} Zombie Loot!`,
+      subtitle:
+        this.language === 'ar'
+          ? 'تمت إضافة أموالك إلى رصيد اللعب الحر! وضع الزومبي متاح مجدداً بعد ساعة.'
+          : 'Cash added to your Free Roam balance! Zombie Story cools down for 1 hour.',
+      kind: 'success',
+    };
+    this.bannerTimer = 4.5;
+    this.pushHud();
+  }
+
+  public finishZombieRunToMenu(): void {
+    const reward = this.story.zombieExtractedRewardPending;
+    this.restoreFromStoryMode(reward > 0, reward);
+    this.phase = 'title';
     this.pushHud();
   }
 
@@ -1909,12 +2028,16 @@ export class CityWorldEngine {
     const kind = this.activeInterior.kind;
     const exitOffsetZ = kind === 'gunshop' || kind === 'skins' || kind === 'dealership' ? -3.2 : 3.2;
     this.player.inInterior = false;
+    this.player.interiorCenterX = 0;
+    this.player.interiorCenterZ = 0;
     this.player.interiorFloorY = 0;
     this.player.interiorHalfW = 11;
     this.player.interiorHalfD = 11;
     this.player.x = ext.x;
     this.player.y = ext.y;
     this.player.z = ext.z + exitOffsetZ;
+    this.player.root.position.set(this.player.x, this.player.y, this.player.z);
+    this.cameraCtrl.snapTo(this.player.x, this.player.y, this.player.z, this.player.heading, false);
     this.activeInterior = null;
     this.interiors.setActiveInterior(null);
     this.phase = 'playing';
@@ -1963,6 +2086,10 @@ export class CityWorldEngine {
 
   public respawnAfterWasted(): void {
     if (this.story.active) {
+      if (this.story.storyId === 'zombie_8095') {
+        this.exitStoryToMenu();
+        return;
+      }
       this.restartStoryFromBeginning();
       return;
     }
@@ -1972,9 +2099,12 @@ export class CityWorldEngine {
     this.wastedFailedMissionName = null;
     this.player.respawnAtHospital();
     this.player.isSwimming = false;
+    this.player.interiorCenterX = 0;
+    this.player.interiorCenterZ = 0;
     this.player.interiorFloorY = 0;
     this.player.interiorHalfW = 11;
     this.player.interiorHalfD = 11;
+    this.cameraCtrl.snapTo(this.player.x, this.player.y, this.player.z, this.player.heading, false);
     this.weapons.refillAmmo();
     this.wanted.clearWanted();
     if (this.multiplayer.passenger.role === 'passenger') {
@@ -2511,7 +2641,16 @@ export class CityWorldEngine {
       }
     }
 
-    if (!fromJet) {
+    // Zombies caught in blast
+    if (this.story.active && this.story.storyId === 'zombie_8095') {
+      for (const zTarget of this.story.getCombatTargets()) {
+        if ((zTarget.x - rx) ** 2 + (zTarget.z - rz) ** 2 <= blastRadiusSq) {
+          this.story.damageZombie(zTarget.id, 220, this.getStoryCallbacks(), this.language);
+        }
+      }
+    }
+
+    if (!fromJet && !(this.story.active && this.story.storyId === 'zombie_8095')) {
       this.wanted.setMinimumStars(3);
     }
   }
@@ -2531,6 +2670,17 @@ export class CityWorldEngine {
     this.player.triggerPunchPose(aimHeading);
     this.fpRig.triggerPunch();
     this.sound.playPunch();
+
+    // Melee punch against Zombies in Story 2
+    if (this.story.active && this.story.storyId === 'zombie_8095') {
+      for (const zt of this.story.getCombatTargets()) {
+        if (Math.hypot(zt.x - this.player.x, zt.z - this.player.z) < 2.9) {
+          this.story.damageZombie(zt.id, 28, this.getStoryCallbacks(), this.language);
+          this.sound.playImpact(0.42);
+          return;
+        }
+      }
+    }
 
     if (nearPed) {
       const res = this.pedestrians.damagePedestrian(nearPed.id, 14, this.player.x, this.player.z);
@@ -2652,6 +2802,9 @@ export class CityWorldEngine {
         if (id === 'story_guard') {
           this.story.damageGuard(dmg, this.getStoryCallbacks(), this.language);
           this.sound.playImpact(0.45);
+        } else if (id.startsWith('zombie_')) {
+          this.story.damageZombie(id, dmg, this.getStoryCallbacks(), this.language);
+          this.sound.playImpact(0.4);
         } else if (id.startsWith('cop_car_')) {
           const u = this.wanted.units.find((item) => item.id === id);
           if (u) {
@@ -2984,6 +3137,8 @@ export class CityWorldEngine {
           this.activeInterior = ctx.nearPortal;
           this.interiors.setActiveInterior(ctx.nearPortal.id);
           this.player.inInterior = true;
+          this.player.interiorCenterX = ctx.nearPortal.interiorCenter.x;
+          this.player.interiorCenterZ = ctx.nearPortal.interiorCenter.z;
           this.player.interiorFloorY = ctx.nearPortal.interiorCenter.y;
           const isHouse = ctx.nearPortal.kind === 'house';
           const tier = ctx.nearPortal.houseSizeTier ?? 1;
@@ -2992,6 +3147,22 @@ export class CityWorldEngine {
           this.player.x = ctx.nearPortal.interiorCenter.x;
           this.player.y = ctx.nearPortal.interiorCenter.y;
           this.player.z = ctx.nearPortal.interiorCenter.z + (this.player.interiorHalfD - 3);
+          this.player.heading = Math.PI;
+          this.player.root.position.set(this.player.x, this.player.y, this.player.z);
+          this.player.root.rotation.y = this.player.heading;
+          this.cameraCtrl.snapTo(
+            this.player.x,
+            this.player.y,
+            this.player.z,
+            this.player.heading,
+            true,
+            {
+              centerX: this.player.interiorCenterX,
+              centerZ: this.player.interiorCenterZ,
+              halfW: this.player.interiorHalfW + 0.25,
+              halfD: this.player.interiorHalfD + 0.25,
+            }
+          );
           this.sound.playDoorLatch();
         }
       } else if (ctx.nearHouseFood) {
@@ -3069,6 +3240,8 @@ export class CityWorldEngine {
       );
       if (
         !this.story.isDialogueOpen() &&
+        !this.story.zombiePhoneModalOpen &&
+        !this.story.zombieExtractedModal &&
         (this.firingActive || this.held.has('KeyG')) &&
         (!this.player.inInterior || allowInteriorWeapon) &&
         (!this.activeVehicle || inRobotRpgMode)
@@ -3076,7 +3249,8 @@ export class CityWorldEngine {
         this.handleWeaponFire();
       }
 
-      const dialogueFreeze = this.story.isDialogueOpen();
+      const dialogueFreeze =
+        this.story.isDialogueOpen() || this.story.zombiePhoneModalOpen || this.story.zombieExtractedModal;
 
       // 1. Update Player or Active Vehicle
       if (this.activeVehicle) {
@@ -3257,7 +3431,15 @@ export class CityWorldEngine {
         speedRatio,
         this.manualOrbitTimer <= 0,
         this.player.inInterior,
-        fpVehicleType
+        fpVehicleType,
+        this.player.inInterior
+          ? {
+              centerX: this.player.interiorCenterX,
+              centerZ: this.player.interiorCenterZ,
+              halfW: this.player.interiorHalfW + 0.25,
+              halfD: this.player.interiorHalfD + 0.25,
+            }
+          : undefined
       );
 
       this.fpRig.update(dt, {
@@ -3324,7 +3506,8 @@ export class CityWorldEngine {
         ? Math.abs(this.activeVehicle.forwardSpeed)
         : Math.hypot(this.player.vx, this.player.vz);
 
-      if (!this.player.inInterior) {
+      const isZombieStory = this.story.active && this.story.storyId === 'zombie_8095';
+      if (!this.player.inInterior && !isZombieStory) {
         const refEntityY = this.activeVehicle ? this.activeVehicle.y : this.player.y;
         this.traffic.update(
           dt,
