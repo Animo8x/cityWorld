@@ -93,7 +93,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v13.html';
+        a.download = 'CityWorld-v15.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -112,7 +112,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'CityWorld-v13.html';
+        a.download = 'CityWorld-v15.html';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -125,7 +125,7 @@ export default function App() {
 
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = 'CityWorld-v13.html';
+    a.download = 'CityWorld-v15.html';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -241,6 +241,7 @@ export default function App() {
           wingsDeployed={hud.wingsDeployed}
           canTransformRobot={hud.canTransformRobot}
           isRobotTransformed={hud.isRobotTransformed}
+          headlightsOn={hud.headlightsOn}
           isSwimming={hud.isSwimming}
           nearPedestrian={hud.nearPedestrian}
           hasInteractionPrompt={Boolean(hud.interactionPrompt)}

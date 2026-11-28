@@ -42,6 +42,7 @@ export class PlayerController {
   public onGround = true;
   public isSwimming = false;
   public isSprinting = false;
+  public isSprintBoosted = false;
   public inInterior = false;
   public interiorCenterX = 0;
   public interiorCenterZ = 0;
@@ -55,6 +56,7 @@ export class PlayerController {
   private aimTimer = 0;
   private punchTimer = 0;
   private punchHand = 1;
+  private sprintExhausted = false;
   private disposables: Array<{ dispose: () => void }> = [];
 
   constructor(scene: THREE.Scene) {
@@ -364,7 +366,7 @@ export class PlayerController {
 
   public update(
     dt: number,
-    input: { moveX: number; moveZ: number; sprint: boolean; jumpJustPressed: boolean },
+    input: { moveX: number; moveZ: number; sprint: boolean; sprintBoost?: boolean; jumpJustPressed: boolean },
     cameraYaw: number,
     colliders: ColliderBox[],
     onFootstep: (sprinting: boolean, inWater: boolean) => void,
@@ -372,15 +374,36 @@ export class PlayerController {
     onHitWorldBorder?: () => void
   ): void {
     const hasMove = Math.abs(input.moveX) > 0.05 || Math.abs(input.moveZ) > 0.05;
-    this.isSprinting = hasMove && input.sprint && this.stamina > 2 && !this.isSwimming;
-
-    if (this.isSprinting) {
-      this.stamina = Math.max(0, this.stamina - 18 * dt);
-    } else {
-      this.stamina = Math.min(this.maxStamina, this.stamina + 14 * dt);
+    if (!input.sprint || this.isSwimming) {
+      this.sprintExhausted = false;
+    } else if (this.sprintExhausted && this.stamina >= 22) {
+      this.sprintExhausted = false;
     }
 
-    const baseSpeed = this.isSwimming ? 4.4 : this.isSprinting ? 10.2 : 5.4;
+    this.isSprinting =
+      hasMove && input.sprint && !this.sprintExhausted && this.stamina > 0.5 && !this.isSwimming;
+    this.isSprintBoosted = this.isSprinting && Boolean(input.sprintBoost);
+
+    if (this.isSprinting) {
+      const drainRate = this.isSprintBoosted ? 35 : 18;
+      this.stamina = Math.max(0, this.stamina - drainRate * dt);
+      if (this.stamina <= 0.5) {
+        this.stamina = 0;
+        this.sprintExhausted = true;
+        this.isSprinting = false;
+        this.isSprintBoosted = false;
+      }
+    } else {
+      this.stamina = Math.min(this.maxStamina, this.stamina + 15 * dt);
+    }
+
+    const baseSpeed = this.isSwimming
+      ? 4.4
+      : this.isSprintBoosted
+        ? 15.2
+        : this.isSprinting
+          ? 10.2
+          : 5.4;
 
     if (hasMove) {
       // Camera-relative movement direction
@@ -510,8 +533,8 @@ export class PlayerController {
       this.leftLegPivot.rotation.x = 0.35;
       this.rightLegPivot.rotation.x = -0.25;
     } else if (hSpeed > 0.35) {
-      const freq = this.isSprinting ? 13 : 8.5;
-      const amp = this.isSprinting ? 0.85 : 0.52;
+      const freq = this.isSprintBoosted ? 17.5 : this.isSprinting ? 13 : 8.5;
+      const amp = this.isSprintBoosted ? 0.98 : this.isSprinting ? 0.85 : 0.52;
       this.walkPhase += dt * freq;
       const s = Math.sin(this.walkPhase) * amp;
       this.leftLegPivot.rotation.x = s;
@@ -520,7 +543,7 @@ export class PlayerController {
       this.rightArmPivot.rotation.x = s * 0.85;
       this.torsoPivot.rotation.x = THREE.MathUtils.damp(
         this.torsoPivot.rotation.x,
-        this.isSprinting ? 0.16 : 0.05,
+        this.isSprintBoosted ? 0.25 : this.isSprinting ? 0.16 : 0.05,
         10,
         dt
       );

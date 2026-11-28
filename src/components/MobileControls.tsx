@@ -20,6 +20,7 @@ export interface VirtualInputState {
   moveX: number; // -1..1
   moveZ: number; // -1..1 (forward positive)
   sprint: boolean;
+  sprintBoost: boolean;
   jump: boolean;
   throttle: number; // -1..1
   steer: number; // -1 (right) .. 1 (left) matching KeyA=+1, KeyD=-1
@@ -37,6 +38,7 @@ interface MobileControlsProps {
   wingsDeployed?: boolean;
   canTransformRobot?: boolean;
   isRobotTransformed?: boolean;
+  headlightsOn?: boolean;
   isSwimming: boolean;
   nearPedestrian: boolean;
   hasInteractionPrompt: boolean;
@@ -65,6 +67,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   wingsDeployed = false,
   canTransformRobot = false,
   isRobotTransformed = false,
+  headlightsOn = false,
   isSwimming,
   nearPedestrian,
   hasInteractionPrompt,
@@ -87,6 +90,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     moveX: 0,
     moveZ: 0,
     sprint: false,
+    sprintBoost: false,
     jump: false,
     throttle: 0,
     steer: 0,
@@ -144,13 +148,13 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     const moveX = Math.abs(nx) < dead ? 0 : nx;
     const moveZ = Math.abs(ny) < dead ? 0 : ny;
     const autoSprint = dist > maxR * 0.88;
-    emit({ moveX, moveZ, sprint: sprintLocked || autoSprint });
+    emit({ moveX, moveZ, sprint: sprintLocked || autoSprint, sprintBoost: sprintLocked });
   };
 
   const resetJoystick = () => {
     joyPointerId.current = null;
     setKnob({ x: 0, y: 0 });
-    emit({ moveX: 0, moveZ: 0, sprint: sprintLocked });
+    emit({ moveX: 0, moveZ: 0, sprint: sprintLocked, sprintBoost: sprintLocked });
   };
 
   const canEnterVehicle =
@@ -289,8 +293,13 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                       onPressHeadlights();
                     }}
                     style={{ width: secBtnSize, height: secBtnSize }}
-                    className="rounded-full bg-slate-950/80 active:bg-yellow-500 active:text-slate-950 border border-slate-600 text-yellow-300 flex items-center justify-center shadow"
+                    className={`rounded-full border flex items-center justify-center shadow transition-colors ${
+                      headlightsOn
+                        ? 'bg-yellow-400 border-yellow-100 text-slate-950 shadow-[0_0_12px_rgba(250,204,21,0.7)]'
+                        : 'bg-slate-950/80 border-slate-600 text-slate-300'
+                    }`}
                     aria-label="Headlights"
+                    aria-pressed={headlightsOn}
                   >
                     <Lightbulb style={{ width: secIcon, height: secIcon }} />
                   </button>
@@ -412,12 +421,12 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
                     e.stopPropagation();
                     const next = !sprintLocked;
                     setSprintLocked(next);
-                    emit({ sprint: next });
+                    emit({ sprint: next || inputRef.current.sprint, sprintBoost: next });
                   }}
                   style={{ width: footSecSize, height: footSecSize }}
-                  className={`rounded-full border-2 flex items-center justify-center shadow ${
+                  className={`rounded-full border-2 flex items-center justify-center shadow transition-colors ${
                     sprintLocked
-                      ? 'bg-sky-500 border-white text-slate-950'
+                      ? 'bg-sky-400 border-white text-slate-950 shadow-[0_0_12px_rgba(56,189,248,0.8)]'
                       : 'bg-slate-950/80 border-slate-600 text-slate-200'
                   }`}
                   aria-label="Sprint"

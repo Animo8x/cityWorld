@@ -117,12 +117,12 @@ const fallbackCss = `
 
 const buildStamp = new Date().toISOString();
 const html = `<!doctype html>
-<!-- CityWorld Standalone v13 | Built ${buildStamp} | Story 2 Year 8095 Zombie Survival, House Interior Fix, 7 Ordinary Street Cars, Owned House Sign Fix, Minecraft Creeper Suit ($3,000), Bugatti Vision GT Voxel 411 km/h, Sesto Elemento 431 km/h, Story Mode 1 & 2, Multiplayer P2P & WS, Save -->
+<!-- CityWorld Standalone v15 | Built ${buildStamp} | Fast Sprint Boost, Auto/Manual Vehicle Headlights, Snow Weather & Footprints, Story 2 Year 8095 Zombie Survival, House Interior Fix, 7 Ordinary Street Cars, Owned House Sign Fix, Minecraft Creeper Suit ($3,000), Bugatti Vision GT Voxel 411 km/h, Sesto Elemento 431 km/h, Story Mode 1 & 2, Multiplayer P2P & WS, Save -->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>CityWorld v13 — 3D Open World Sandbox</title>
+    <title>CityWorld v15 — 3D Open World Sandbox</title>
     <meta name="description" content="Explore CityWorld, a 3D open-world city with 10 districts, driveable vehicles, live traffic, police chases, dynamic weather, day/night cycle, and missions." />
     <meta name="theme-color" content="#020617" />
     <meta name="mobile-web-app-capable" content="yes" />

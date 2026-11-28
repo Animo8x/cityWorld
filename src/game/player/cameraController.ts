@@ -148,7 +148,7 @@ export class ThirdPersonCameraController {
         this.shakeIntensity = THREE.MathUtils.damp(this.shakeIntensity, 0, 10, dt);
       }
 
-      const targetFov = inVehicle ? 72 + speedRatio * 10 : 70;
+      const targetFov = inVehicle ? 72 + speedRatio * 10 : 70 + speedRatio * 9;
       if (Math.abs(camera.fov - targetFov) > 0.1) {
         camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 8, dt);
         camera.updateProjectionMatrix();
@@ -237,7 +237,7 @@ export class ThirdPersonCameraController {
       this.shakeIntensity = THREE.MathUtils.damp(this.shakeIntensity, 0, 10, dt);
     }
 
-    const targetFov = inVehicle ? 64 + speedRatio * 14 : 60;
+    const targetFov = inVehicle ? 64 + speedRatio * 14 : 60 + speedRatio * 10;
     if (Math.abs(camera.fov - targetFov) > 0.1) {
       camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 7, dt);
       camera.updateProjectionMatrix();

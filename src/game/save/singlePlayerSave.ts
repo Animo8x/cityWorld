@@ -50,7 +50,7 @@ export interface SinglePlayerSaveData {
   };
 }
 
-const VALID_WEATHERS: WeatherType[] = ['clear', 'cloudy', 'rain', 'fog'];
+const VALID_WEATHERS: WeatherType[] = ['clear', 'cloudy', 'rain', 'fog', 'snow'];
 const VALID_QUALITIES: QualityMode[] = ['very_low', 'low', 'medium', 'high', 'ultra'];
 const VALID_MISSION_IDS = new Set(MISSION_REGISTRY.map((m) => m.id));
 const VALID_HOUSE_IDS = new Set(INTERIOR_PORTALS.filter((p) => p.kind === 'house').map((p) => p.id));

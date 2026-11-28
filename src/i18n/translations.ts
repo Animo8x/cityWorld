@@ -255,6 +255,7 @@ export const TRANSLATIONS = {
       cloudy: 'Cloudy',
       rain: 'Rain',
       fog: 'Fog',
+      snow: 'Snow',
     } as Record<WeatherType, string>,
     timePhases: {
       Dawn: 'Dawn',
@@ -531,6 +532,7 @@ export const TRANSLATIONS = {
       cloudy: 'غائم',
       rain: 'ممطر',
       fog: 'ضباب',
+      snow: 'مثلج',
     } as Record<WeatherType, string>,
     timePhases: {
       Dawn: 'الفجر',

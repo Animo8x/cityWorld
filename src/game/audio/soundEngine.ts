@@ -215,9 +215,16 @@ export class SoundEngine {
       this.screechGain.gain.setTargetAtTime(targetScreech, now, 0.05);
     }
 
-    // Rain ambience
+    // Rain / wind ambience
     if (this.rainGain) {
-      const targetRain = params.weather === 'rain' ? 0.35 : params.weather === 'cloudy' ? 0.05 : 0.02;
+      const targetRain =
+        params.weather === 'rain'
+          ? 0.35
+          : params.weather === 'snow'
+            ? 0.08
+            : params.weather === 'cloudy'
+              ? 0.05
+              : 0.02;
       this.rainGain.gain.setTargetAtTime(targetRain, now, 0.3);
     }
 

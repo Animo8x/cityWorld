@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import {
   Clock,
+  Cloud,
+  CloudFog,
   CloudRain,
   Compass,
   Map as MapIcon,
   Pause,
   Shield,
+  Snowflake,
   Sun,
   Volume2,
   VolumeX,
@@ -292,6 +295,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           >
             {hud.weather === 'rain' ? (
               <CloudRain style={{ width: subIconSz, height: subIconSz }} className="text-sky-400" />
+            ) : hud.weather === 'snow' ? (
+              <Snowflake style={{ width: subIconSz, height: subIconSz }} className="text-cyan-200" />
+            ) : hud.weather === 'cloudy' ? (
+              <Cloud style={{ width: subIconSz, height: subIconSz }} className="text-slate-300" />
+            ) : hud.weather === 'fog' ? (
+              <CloudFog style={{ width: subIconSz, height: subIconSz }} className="text-slate-400" />
             ) : (
               <Sun style={{ width: subIconSz, height: subIconSz }} className="text-amber-300" />
             )}

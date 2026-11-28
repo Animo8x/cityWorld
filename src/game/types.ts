@@ -156,7 +156,7 @@ export interface VehicleSpec {
   canTransformRobot?: boolean;
 }
 
-export type WeatherType = 'clear' | 'cloudy' | 'rain' | 'fog';
+export type WeatherType = 'clear' | 'cloudy' | 'rain' | 'fog' | 'snow';
 
 export type TimePhase = 'Dawn' | 'Morning' | 'Noon' | 'Afternoon' | 'Sunset' | 'Night';
 

@@ -4,6 +4,7 @@ import { PedestrianSystem } from './ai/pedestrianSystem';
 import { TrafficAgent, TrafficSystem } from './ai/trafficSystem';
 import { SoundEngine } from './audio/soundEngine';
 import { WeaponSystem } from './combat/weaponSystem';
+import { SnowFootprintSystem } from './environment/snowFootprints';
 import { WeatherAndTimeSystem } from './environment/weatherAndTime';
 import { MISSION_REGISTRY, MissionSystem } from './missions/missionSystem';
 import { ThirdPersonCameraController } from './player/cameraController';
@@ -96,6 +97,7 @@ export class CityWorldEngine {
   private weapons: WeaponSystem;
   private missions: MissionSystem;
   private weatherTime: WeatherAndTimeSystem;
+  private snowFootprints: SnowFootprintSystem;
   private gpsRenderer: GpsPathRenderer;
   public sound: SoundEngine;
   public multiplayer!: MultiplayerManager;
@@ -132,6 +134,7 @@ export class CityWorldEngine {
     moveX: 0,
     moveZ: 0,
     sprint: false,
+    sprintBoost: false,
     jump: false,
     throttle: 0,
     steer: 0,
@@ -226,6 +229,7 @@ export class CityWorldEngine {
     // 4. Initialize Subsystems
     this.sound = new SoundEngine();
     this.weatherTime = new WeatherAndTimeSystem(this.scene, this.isSoftwareGl, this.isMobile);
+    this.snowFootprints = new SnowFootprintSystem(this.scene);
     this.textures = createProceduralTextures(this.renderer);
     this.world = buildCityWorld(this.scene, this.textures, this.isMobile);
     this.interiors = buildInteriors(this.scene);
@@ -315,6 +319,20 @@ export class CityWorldEngine {
     }
 
     this.loadSinglePlayerProgress();
+    // 5% chance every time the game opens to start in snow weather
+    if (Math.random() < 0.05) {
+      this.weatherTime.setWeatherImmediate('snow');
+    } else if (this.weatherTime.weather === 'snow') {
+      this.weatherTime.setWeatherImmediate('snow');
+    }
+    this.world.updateLightsAndWater(
+      this.simTime,
+      this.weatherTime.isNight(),
+      this.weatherTime.weather === 'rain',
+      this.simTime,
+      this.weatherTime.weather === 'snow',
+      this.weatherTime.snowAmount
+    );
     this.world.syncOwnedHouseSigns(this.ownedHouses);
     this.applyQualitySettings();
     this.bindEvents();
@@ -872,7 +890,7 @@ export class CityWorldEngine {
     this.weapons.currentWeapon = saved.weapons.currentWeapon;
 
     this.weatherTime.timeHours = saved.environment.timeHours;
-    this.weatherTime.weather = saved.environment.weather;
+    this.weatherTime.setWeatherImmediate(saved.environment.weather);
     this.qualityMode = saved.environment.qualityMode;
     this.sound.setMuted(saved.environment.muted);
   }
@@ -1004,7 +1022,8 @@ export class CityWorldEngine {
     this.player.applySkin('classic');
     this.fpRig.syncSkin('classic');
     this.weatherTime.timeHours = 10.5;
-    this.weatherTime.weather = 'clear';
+    this.weatherTime.setWeatherImmediate(Math.random() < 0.05 ? 'snow' : 'clear');
+    this.snowFootprints.clear();
 
     this.missionBanner = {
       title: this.language === 'ar' ? 'تم مسح الحفظ' : 'Save Cleared',
@@ -1819,6 +1838,12 @@ export class CityWorldEngine {
     this.pushHud();
   }
 
+  private isSleepBlockedByPoliceMission(): boolean {
+    const active = this.missions.activeMission;
+    if (!active) return false;
+    return active.id === 'heatwave_escape' || active.steps.some((s) => s.type === 'evade_police');
+  }
+
   public executeInteriorAction(actionId: string): void {
     if (!this.activeInterior) return;
     const action = this.activeInterior.shopActions.find((a) => a.id === actionId);
@@ -1865,6 +1890,20 @@ export class CityWorldEngine {
         kind: 'fail',
       };
       this.bannerTimer = 3.2;
+      this.pushHud();
+      return;
+    }
+
+    if (actionId === 'house_sleep' && this.isSleepBlockedByPoliceMission()) {
+      this.missionBanner = {
+        title: this.language === 'ar' ? 'لا يمكنك النوم الآن!' : 'Cannot Sleep Now!',
+        subtitle:
+          this.language === 'ar'
+            ? 'لا يمكنك النوم أثناء مهمة مطاردة الشرطة — اهرب من الشرطة أولاً!'
+            : 'Cannot sleep during the Police Chase mission — lose the cops first!',
+        kind: 'fail',
+      };
+      this.bannerTimer = 3.4;
       this.pushHud();
       return;
     }
@@ -2235,14 +2274,19 @@ export class CityWorldEngine {
         }
 
         if (Math.hypot(this.player.x - bedX, this.player.z - -1.5) < 3.2) {
+          const sleepBlocked = owned && this.isSleepBlockedByPoliceMission();
           return {
-            prompt: owned
+            prompt: sleepBlocked
               ? this.language === 'ar'
-                ? '[E] النوم على السرير (+7 ساعات وشفاء كامل)'
-                : '[E] Sleep in Bed (+7h & Full Heal)'
-              : this.language === 'ar'
-                ? `[E] شراء البيت أولاً ($${this.activeInterior.housePrice ?? 5500})`
-                : `[E] Buy House First ($${this.activeInterior.housePrice ?? 5500})`,
+                ? 'لا يمكنك النوم أثناء مهمة مطاردة الشرطة!'
+                : 'Cannot sleep during Police Chase mission!'
+              : owned
+                ? this.language === 'ar'
+                  ? '[E] النوم على السرير (+7 ساعات وشفاء كامل)'
+                  : '[E] Sleep in Bed (+7h & Full Heal)'
+                : this.language === 'ar'
+                  ? `[E] شراء البيت أولاً ($${this.activeInterior.housePrice ?? 5500})`
+                  : `[E] Buy House First ($${this.activeInterior.housePrice ?? 5500})`,
             nearVehicle: null,
             nearRemoteVehicle: null,
             nearTrafficAgent: null,
@@ -3011,6 +3055,7 @@ export class CityWorldEngine {
         } else if (ctx.nearPoliceUnit) {
           const snap = this.wanted.hijackPoliceCruiser(ctx.nearPoliceUnit);
           const hijacked = this.vehicleMgr.spawnHijackedVehicle('police', snap.x, snap.z, snap.heading, 0x0f172a);
+          hijacked.headlightsOn = this.weatherTime.isNight();
           this.activeVehicle = hijacked;
           this.activeVehicle.occupiedByPlayer = true;
           this.player.root.visible = false;
@@ -3029,6 +3074,7 @@ export class CityWorldEngine {
             snap.colorHex
           );
           hijacked.hp = snap.hp;
+          hijacked.headlightsOn = this.weatherTime.isNight();
           hijacked.rig.damage.front = snap.damage.front;
           hijacked.rig.damage.rear = snap.damage.rear;
           hijacked.rig.damage.left = snap.damage.left;
@@ -3069,6 +3115,9 @@ export class CityWorldEngine {
     if (this.activeVehicle) {
       if (this.justPressed.has('KeyL')) {
         this.activeVehicle.headlightsOn = !this.activeVehicle.headlightsOn;
+        this.activeVehicle.headlightsManualOverride = true;
+        this.sound.playDoorLatch();
+        this.pushHud();
       }
       if (this.justPressed.has('KeyQ')) {
         this.activeVehicle.turnSignal = this.activeVehicle.turnSignal === -1 ? 0 : -1;
@@ -3198,8 +3247,15 @@ export class CityWorldEngine {
     this.processEdgeInputs();
 
     if (this.phase === 'title') {
-      this.weatherTime.update(dt * 0.25, 0, 0, false);
-      this.world.updateLightsAndWater(this.simTime, this.weatherTime.isNight(), this.weatherTime.weather === 'rain', this.simTime);
+      this.weatherTime.update(dt * 0.25, 0, 0, false, false);
+      this.world.updateLightsAndWater(
+        this.simTime,
+        this.weatherTime.isNight(),
+        this.weatherTime.weather === 'rain',
+        this.simTime,
+        this.weatherTime.weather === 'snow',
+        this.weatherTime.snowAmount
+      );
       this.world.updateStreaming(0, 0, this.streamRadius);
       this.fpRig.root.visible = false;
       this.traffic.update(dt, this.simTime, this.weatherTime.isNight(), 0, 0, 0, false, this.trafficCullDist, () => {});
@@ -3373,14 +3429,14 @@ export class CityWorldEngine {
           (this.held.has('KeyS') || this.held.has('ArrowDown') ? 1 : 0);
         const moveX = dialogueFreeze ? 0 : Math.abs(kbMoveX) > 0 ? kbMoveX : this.virtualInput.moveX;
         const moveZ = dialogueFreeze ? 0 : Math.abs(kbMoveZ) > 0 ? kbMoveZ : this.virtualInput.moveZ;
-        const sprint = dialogueFreeze
-          ? false
-          : this.held.has('ShiftLeft') || this.held.has('ShiftRight') || this.virtualInput.sprint;
+        const kbSprint = this.held.has('ShiftLeft') || this.held.has('ShiftRight');
+        const sprint = dialogueFreeze ? false : kbSprint || this.virtualInput.sprint;
+        const sprintBoost = dialogueFreeze ? false : kbSprint || this.virtualInput.sprintBoost;
         const jump = dialogueFreeze ? false : this.held.has('Space') || this.virtualInput.jump;
 
         this.player.update(
           dt,
-          { moveX, moveZ, sprint, jumpJustPressed: jump },
+          { moveX, moveZ, sprint, sprintBoost, jumpJustPressed: jump },
           this.cameraCtrl.yaw,
           this.world.colliders,
           (sp, inW) => this.sound.playFootstep(sp, inW),
@@ -3404,9 +3460,11 @@ export class CityWorldEngine {
         ? Math.min(1, Math.abs(this.activeVehicle.forwardSpeed) / this.activeVehicle.rig.spec.maxSpeed)
         : passengerVehicle
           ? Math.min(1, Math.abs(passengerVehicle.state.forwardSpeed) / passengerVehicle.rig.spec.maxSpeed)
-          : this.player.isSprinting
-            ? 0.45
-            : 0;
+          : this.player.isSprintBoosted
+            ? 0.88
+            : this.player.isSprinting
+              ? 0.35
+              : 0;
 
       const fpVehicleType: 'none' | 'car' | 'bike' | 'airplane' | 'robot' = !inAnyVehicle
         ? 'none'
@@ -3465,12 +3523,29 @@ export class CityWorldEngine {
       const focusX = this.player.inInterior && this.activeInterior ? this.activeInterior.exteriorPos.x : this.player.x;
       const focusZ = this.player.inInterior && this.activeInterior ? this.activeInterior.exteriorPos.z : this.player.z;
 
-      this.weatherTime.update(dt, focusX, focusZ, this.player.inInterior);
+      const allowRandomWeather = !this.story.active && !this.multiplayer.isActive();
+      this.weatherTime.update(dt, focusX, focusZ, this.player.inInterior, allowRandomWeather);
       this.world.updateLightsAndWater(
         this.simTime,
         this.weatherTime.isNight(),
         this.weatherTime.weather === 'rain',
-        this.simTime
+        this.simTime,
+        this.weatherTime.weather === 'snow',
+        this.weatherTime.snowAmount
+      );
+      this.snowFootprints.update(
+        dt,
+        {
+          x: this.player.x,
+          y: this.player.y,
+          z: this.player.z,
+          heading: this.player.heading,
+          onGround: this.player.onGround,
+          inInterior: this.player.inInterior,
+          isSwimming: this.player.isSwimming,
+          inVehicle: Boolean(this.activeVehicle || passengerVehicle),
+        },
+        this.weatherTime.snowAmount
       );
       this.streamAccum += dt;
       if (this.streamAccum >= 0.25) {
@@ -4154,6 +4229,7 @@ export class CityWorldEngine {
     this.missions.dispose();
     this.story.dispose();
     this.gpsRenderer.dispose();
+    this.snowFootprints.dispose();
     this.weatherTime.dispose();
     this.world.dispose();
     this.interiors.dispose();

@@ -31,6 +31,7 @@ export interface WorldVehicle {
   hp: number;
   exploded: boolean;
   headlightsOn: boolean;
+  headlightsManualOverride?: boolean;
   turnSignal: -1 | 0 | 1;
   occupiedByPlayer: boolean;
   braking: boolean;
@@ -494,12 +495,13 @@ export class VehicleManager {
   private smokeCursor = 0;
   private smokeDirty = false;
   private activeHeadlightSpot: THREE.SpotLight;
+  private lastIsNight: boolean | null = null;
   private _dummy = new THREE.Object3D();
   private _color = new THREE.Color();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
-    this.activeHeadlightSpot = new THREE.SpotLight(0xfffbeb, 22, 62, Math.PI / 5, 0.45, 1.4);
+    this.activeHeadlightSpot = new THREE.SpotLight(0xfffbeb, 110, 86, Math.PI / 4.2, 0.52, 1.0);
     this.activeHeadlightSpot.visible = false;
     scene.add(this.activeHeadlightSpot);
     scene.add(this.activeHeadlightSpot.target);
@@ -755,10 +757,25 @@ export class VehicleManager {
   ): void {
     this.signalTimer += dt;
     const blinkOn = Math.floor(this.signalTimer * 2.5) % 2 === 0;
-    const rainGripFactor = weather === 'rain' ? 0.72 : 1.0;
+    const rainGripFactor = weather === 'rain' ? 0.72 : weather === 'snow' ? 0.88 : 1.0;
     let activeSpotUsed = false;
 
+    const nightTransitioned = this.lastIsNight !== null && this.lastIsNight !== isNight;
+    if (this.lastIsNight === null || nightTransitioned) {
+      this.lastIsNight = isNight;
+      for (let i = 0; i < this.vehicles.length; i++) {
+        const veh = this.vehicles[i];
+        if (nightTransitioned || !veh.headlightsManualOverride) {
+          veh.headlightsOn = isNight;
+          veh.headlightsManualOverride = false;
+        }
+      }
+    }
+
     for (const v of this.vehicles) {
+      if (!v.occupiedByPlayer && !v.headlightsManualOverride) {
+        v.headlightsOn = isNight;
+      }
       const spec = v.rig.spec;
       const isBike = isBicycleClass(v.classId);
       const isPlane = isAirplaneClass(v.classId);
@@ -1129,8 +1146,8 @@ export class VehicleManager {
         v.classId === 'voxel_revuelto' ||
         v.classId === 'voxel_bolide' ||
         v.classId === 'voxel_jesko';
-      const lightsActive = !v.exploded && (v.occupiedByPlayer ? v.headlightsOn || isNight : isNight);
-      const targetHeadGlow = isVoxelHyper ? (lightsActive ? 2.6 : 1.85) : lightsActive ? 2.4 : 0.15;
+      const lightsActive = !v.exploded && v.headlightsOn;
+      const targetHeadGlow = isVoxelHyper ? (lightsActive ? 3.2 : 0.28) : lightsActive ? 3.2 : 0.12;
       const heads = v.rig.headlightMeshes;
       if (heads.length > 0 && (heads[0].material as THREE.MeshStandardMaterial).emissiveIntensity !== targetHeadGlow) {
         for (let idx = 0; idx < heads.length; idx++) {
@@ -1143,9 +1160,10 @@ export class VehicleManager {
         const sinH = Math.sin(v.heading);
         const cosH = Math.cos(v.heading);
         this.activeHeadlightSpot.visible = true;
+        this.activeHeadlightSpot.intensity = isNight ? 135 : 70;
         this.activeHeadlightSpot.color.setHex(v.classId === 'nova_x' ? 0xe0ffff : 0xfffbeb);
         this.activeHeadlightSpot.position.set(v.x + sinH * (spec.length * 0.48), v.y + 0.85, v.z + cosH * (spec.length * 0.48));
-        this.activeHeadlightSpot.target.position.set(v.x + sinH * (spec.length * 0.5 + 18), v.y, v.z + cosH * (spec.length * 0.5 + 18));
+        this.activeHeadlightSpot.target.position.set(v.x + sinH * (spec.length * 0.5 + 22), v.y + 0.1, v.z + cosH * (spec.length * 0.5 + 22));
         this.activeHeadlightSpot.target.updateMatrixWorld();
       }
 
@@ -1161,12 +1179,14 @@ export class VehicleManager {
       const targetTailGlow = v.exploded
         ? 0
         : v.braking
-          ? 2.8
+          ? 2.4
           : isVoxelHyper
-            ? 1.5
+            ? lightsActive
+              ? 0.85
+              : 0.35
             : lightsActive
-              ? 0.9
-              : 0.2;
+              ? 0.65
+              : 0.14;
       const tails = v.rig.taillightMeshes;
       if (tails.length > 0 && (tails[0].material as THREE.MeshStandardMaterial).emissiveIntensity !== targetTailGlow) {
         for (let idx = 0; idx < tails.length; idx++) {

@@ -32,7 +32,14 @@ export interface WorldBuildResult {
   radarDish: THREE.Object3D;
   roadMaterials: THREE.MeshStandardMaterial[];
   updateStreaming: (playerX: number, playerZ: number, streamRadius?: number) => void;
-  updateLightsAndWater: (time: number, isNight: boolean, isRaining: boolean, simTime: number) => void;
+  updateLightsAndWater: (
+    time: number,
+    isNight: boolean,
+    isRaining: boolean,
+    simTime: number,
+    isSnowing?: boolean,
+    snowAmount?: number
+  ) => void;
   syncOwnedHouseSigns: (ownedHouses: Set<string>) => void;
   dispose: () => void;
 }
@@ -69,7 +76,10 @@ export function buildCityWorld(
   terrainGeo.translate(260, 0, 120);
   const posAttr = terrainGeo.attributes.position;
   const colors = new Float32Array(posAttr.count * 3);
+  const normalTerrainColors = new Float32Array(posAttr.count * 3);
+  const snowTerrainColors = new Float32Array(posAttr.count * 3);
   const _c = new THREE.Color();
+  const _snowC = new THREE.Color();
 
   for (let i = 0; i < posAttr.count; i++) {
     const vx = posAttr.getX(i);
@@ -84,9 +94,11 @@ export function buildCityWorld(
       vz >= RICH_COUNTRY_BOUNDS.minZ - 16 &&
       vz <= RICH_COUNTRY_BOUNDS.maxZ + 16;
 
+    let isRunwayBed = false;
     if (onAuroria) {
       if (vx >= 776 && vx <= 816 && vz >= -232 && vz <= -8) {
         _c.setHex(0x334155);
+        isRunwayBed = true;
       } else if (h < 0.25) {
         _c.setHex(0xf3e2b3);
       } else if (vx >= 850 && vx <= 1160 && vz >= -312 && vz <= 70) {
@@ -97,6 +109,7 @@ export function buildCityWorld(
     } else if (onIsland) {
       if (Math.abs(vx - ISLAND_CENTER.x) <= 22 && vz >= 685 && vz <= 825) {
         _c.setHex(0x475569);
+        isRunwayBed = true;
       } else if (h < 1.25) {
         _c.setHex(0xdcc592);
       } else {
@@ -112,11 +125,30 @@ export function buildCityWorld(
     } else {
       _c.setHex(0x3a6432);
     }
-    colors[i * 3] = _c.r;
-    colors[i * 3 + 1] = _c.g;
-    colors[i * 3 + 2] = _c.b;
+
+    const idx3 = i * 3;
+    colors[idx3] = _c.r;
+    colors[idx3 + 1] = _c.g;
+    colors[idx3 + 2] = _c.b;
+    normalTerrainColors[idx3] = _c.r;
+    normalTerrainColors[idx3 + 1] = _c.g;
+    normalTerrainColors[idx3 + 2] = _c.b;
+
+    if (h <= WATER_LEVEL + 0.04 || isRunwayBed) {
+      _snowC.copy(_c);
+    } else if (h > 14) {
+      _snowC.setHex(0xdbeafe);
+    } else if (h > 2.2) {
+      _snowC.setHex(0xeaf2ff);
+    } else {
+      _snowC.setHex(0xf1f5f9);
+    }
+    snowTerrainColors[idx3] = _snowC.r;
+    snowTerrainColors[idx3 + 1] = _snowC.g;
+    snowTerrainColors[idx3 + 2] = _snowC.b;
   }
-  terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const terrainColorAttr = new THREE.BufferAttribute(colors, 3);
+  terrainGeo.setAttribute('color', terrainColorAttr);
   terrainGeo.computeVertexNormals();
   const terrainMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -1557,7 +1589,14 @@ export function buildCityWorld(
         group.visible = dx * dx + dz * dz < r2;
       }
     },
-    updateLightsAndWater: (time: number, isNight: boolean, isRaining: boolean, simTime: number) => {
+    updateLightsAndWater: (
+      time: number,
+      isNight: boolean,
+      isRaining: boolean,
+      simTime: number,
+      isSnowing = false,
+      snowAmount = isSnowing ? 1 : 0
+    ) => {
       waterUniforms.uTime.value = time;
       radarDish.rotation.y = time * 1.1;
 
@@ -1575,6 +1614,33 @@ export function buildCityWorld(
         for (let i = 0; i < roadMaterials.length; i++) {
           roadMaterials[i].roughness = targetRough;
         }
+      }
+
+      const clampedSnow = snowAmount <= 0.005 ? 0 : snowAmount >= 0.995 ? 1 : snowAmount;
+      const lastSnow = (terrainMesh.userData.lastSnow as number | undefined) ?? 0;
+      if (Math.abs(clampedSnow - lastSnow) > 0.005) {
+        terrainMesh.userData.lastSnow = clampedSnow;
+        const out = terrainColorAttr.array as Float32Array;
+        if (clampedSnow === 0) {
+          out.set(normalTerrainColors);
+        } else if (clampedSnow === 1) {
+          out.set(snowTerrainColors);
+        } else {
+          const inv = 1 - clampedSnow;
+          for (let i = 0; i < out.length; i++) {
+            out[i] = normalTerrainColors[i] * inv + snowTerrainColors[i] * clampedSnow;
+          }
+        }
+        terrainColorAttr.needsUpdate = true;
+      }
+
+      const concreteSnow = clampedSnow >= 0.35;
+      if (concreteSnow !== Boolean(concreteMat.userData.isSnow)) {
+        concreteMat.userData.isSnow = concreteSnow;
+        concreteMat.map = concreteSnow ? null : tex.sidewalkMap;
+        concreteMat.color.setHex(concreteSnow ? 0xeef4fb : 0xffffff);
+        concreteMat.roughness = concreteSnow ? 0.94 : 0.88;
+        concreteMat.needsUpdate = true;
       }
 
       for (let i = 0; i < tlBuckets.length; i++) {

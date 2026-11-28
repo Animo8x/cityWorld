@@ -1161,6 +1161,56 @@ export function groundHeightAt(x: number, z: number): number {
   return hill;
 }
 
+export function isPointOnRoad(x: number, z: number): boolean {
+  // 1. All City, Country, and Auroria asphalt/marble road segments
+  for (let i = 0; i < ROAD_SEGMENTS.length; i++) {
+    const seg = ROAD_SEGMENTS[i];
+    const dx = seg.x2 - seg.x1;
+    const dz = seg.z2 - seg.z1;
+    const lenSq = dx * dx + dz * dz;
+    if (lenSq <= 0.0001) continue;
+    let t = ((x - seg.x1) * dx + (z - seg.z1) * dz) / lenSq;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const closestX = seg.x1 + dx * t;
+    const closestZ = seg.z1 + dz * t;
+    const distSq = (x - closestX) * (x - closestX) + (z - closestZ) * (z - closestZ);
+    const halfW = seg.width * 0.5 + 0.15;
+    if (distSq <= halfW * halfW) {
+      return true;
+    }
+  }
+
+  // 2. Metro Ring Overpass Bridge deck & ramps
+  if (Math.abs(z - -265) <= 9.2 && x >= -102 && x <= 102) {
+    return true;
+  }
+
+  // 3. Airport Runways (Mainland Airport, Palm Cove Island, Auroria Royal Jet Strip)
+  if (x >= 235 && x <= 475 && z >= -332 && z <= -288) return true;
+  if (Math.abs(x - ISLAND_CENTER.x) <= 11.5 && z >= 688 && z <= 824) return true;
+  if (x >= 781.5 && x <= 808.5 && z >= -226 && z <= -14) return true;
+
+  return false;
+}
+
+export function getSnowSurfaceY(x: number, z: number): number {
+  const baseH = groundHeightAt(x, z);
+  // Downtown central plaza slab (top at y = 0.24)
+  if (Math.abs(x) <= 29 && Math.abs(z) <= 29) {
+    return Math.max(baseH, 0.24);
+  }
+  // Hospital plaza slab (top at y = 0.22)
+  if (Math.abs(x + 80) <= 28 && Math.abs(z + 80) <= 28) {
+    return Math.max(baseH, 0.22);
+  }
+  // Auroria central fountain plaza slab (top at y = 0.95)
+  if (Math.abs(x - 952) <= 29 && Math.abs(z + 180) <= 29) {
+    return Math.max(baseH, 0.95);
+  }
+  return baseH;
+}
+
 export function getDistrictAt(x: number, z: number): DistrictInfo {
   if (
     x >= RICH_COUNTRY_BOUNDS.minX &&
